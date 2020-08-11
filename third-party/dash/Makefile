@@ -15,19 +15,19 @@ $(CONFIGURE) :
 		./configure --host=$(AUTOCONF_TARGET_TRIPLET) \
 			--target=$(AUTOCONF_TARGET_TRIPLET) \
 			CC=$(EMBOX_GCC) \
-			CPPFLAGS=-DJOBS=0 \
+			CPPFLAGS="-DJOBS=0 -I$(ROOT_DIR)/third-party/dash/include ${EMBOX_IMPORTED_CPPFLAGS}" \
 	)
 	touch $@
 
 $(BUILD) :
 	cd $(BUILD_DIR)/$(PKG_NAME)-$(PKG_VER) && ( \
-		make MAKEFLAGS='$(EMBOX_IMPORTED_MAKEFLAGS)' CC=$(EMBOX_GCC) ;\
+		$(MAKE) MAKEFLAGS='$(EMBOX_IMPORTED_MAKEFLAGS)' CC=$(EMBOX_GCC) ;\
 	)
 	touch $@
 
 $(INSTALL) :
 	cd $(BUILD_DIR)/$(PKG_NAME)-$(PKG_VER) && ( \
-		make DESTDIR=$(PKG_INSTALL_DIR) install; \
+		$(MAKE) DESTDIR=$(PKG_INSTALL_DIR) install; \
 		mv $(PKG_INSTALL_DIR)/usr/local/bin/dash $(PKG_INSTALL_DIR)/dash.o; \
 	)
 	touch $@

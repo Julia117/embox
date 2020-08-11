@@ -7,6 +7,8 @@
  */
 
 #include <errno.h>
+#include <util/err.h>
+
 #include <fs/file_operation.h>
 #include <drivers/usb/usb_driver.h>
 #include <drivers/usb/usb_dev_desc.h>
@@ -15,30 +17,28 @@
 
 EMBOX_UNIT_INIT(usb_example_init);
 
-static int usb_example_probe(struct usb_driver *drv, struct usb_dev *dev,
-		void **data) {
-
+static int usb_example_probe(struct usb_interface *dev) {
 	return 0;
 }
 
-static void usb_example_disconnect(struct usb_dev *dev, void *data) {
+static void usb_example_disconnect(struct usb_interface *dev, void *data) {
 
 }
 
-static int example_open(struct node *node, struct file_desc *file_desc, int flags) {
+static struct idesc * example_open(struct inode *node, struct idesc *idesc) {
 	struct usb_dev_desc *ddesc;
 	int res;
 
 	res = usb_driver_open_by_node(node, &ddesc);
 	if (0 != res) {
-		return res;
+		return err_ptr(-res);
 	}
 
 	assert(ddesc);
 
-	file_desc->file_info = ddesc;
+	file_desc_set_file_info(file_desc_from_idesc(idesc), ddesc);
 
-	return 0;
+	return idesc;
 }
 
 static int example_close(struct file_desc *desc) {
@@ -83,7 +83,7 @@ static size_t example_write(struct file_desc *desc, void *buf, size_t size) {
 
 	return size;
 }
-static struct kfile_operations example_file_ops = {
+static struct file_operations example_file_ops = {
 	.open = example_open,
 	.close = example_close,
 	.read = example_read,

@@ -7,25 +7,25 @@
  */
 
 #include <unistd.h>
-#include <drivers/gpio.h>
+#include <drivers/gpio/gpio.h>
 #include <embox/test.h>
 
-EMBOX_TEST(blinking_led);
+EMBOX_TEST_SUITE("stm32vl blinking_led");
 
 #define LED_BLUE (1 << 8) /* port C, pin 8 */
 #define LED_GREEN (1 << 9) /* port C, pin 9 */
 
 static inline void led1_level(unsigned int level) {
-	gpio_set_level(GPIO_C, LED_BLUE, level);
+	gpio_set(GPIO_PORT_C, LED_BLUE, level);
 }
 
-static int blinking_led(void) {
+TEST_CASE("stm32vl blinking_led test") {
 	int count = 5;
 	int state;
 
-	gpio_settings(GPIO_C, LED_BLUE | LED_GREEN, GPIO_MODE_OUTPUT);
-	gpio_set_level(GPIO_C, LED_BLUE, 0x1);
-	gpio_set_level(GPIO_C, LED_GREEN, 0);
+	gpio_setup_mode(GPIO_PORT_C, LED_BLUE | LED_GREEN, GPIO_MODE_OUTPUT);
+	gpio_set(GPIO_PORT_C, LED_BLUE, 0x1);
+	gpio_set(GPIO_PORT_C, LED_GREEN, 0);
 
 	state = 0;
 	while (count) {
@@ -36,7 +36,6 @@ static int blinking_led(void) {
 		}
 		sleep(1);
 	}
-	gpio_set_level(GPIO_C, LED_GREEN, 0);
+	gpio_set(GPIO_PORT_C, LED_GREEN, 0);
 
-	return 0;
 }

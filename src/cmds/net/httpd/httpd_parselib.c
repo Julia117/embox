@@ -38,7 +38,7 @@ static char *httpd_parse_uri(char *str, struct http_req_uri *huri) {
 
 	pb = strchr(pb, ' ');
 	if (!pb) {
-		HTTPD_ERROR("%s: can't find URI-Version separator\n", __func__);
+		httpd_error("can't find URI-Version separator");
 		return NULL;
 	}
 
@@ -59,13 +59,13 @@ static char *httpd_parse_request_line(char *str, struct http_req *hreq) {
 
 	pb = httpd_parse_uri(pb, &hreq->uri);
 	if (!pb) {
-		HTTPD_ERROR("%s: can't parse uri\n", __func__);
+		httpd_error("can't parse uri");
 		return NULL;
 	}
 
 	pb = strstr(pb, "\r\n");
 	if (!pb) {
-		HTTPD_ERROR("%s: can't find sentinel\n", __func__);
+		httpd_error("can't find sentinel");
 		return NULL;
 	}
 
@@ -107,14 +107,12 @@ static char *httpd_parse_headers(char *str, struct http_req *hreq) {
 
 char *httpd_parse_request(char *str, struct http_req *hreq) {
 	char *pb;
-	pb = str;
 
 	pb = httpd_parse_request_line(str, hreq);
 	if (!pb) {
-		HTTPD_ERROR("%s: can't parse request line\n", __func__);
+		httpd_error("can't parse request line");
 		return NULL;
 	}
 
 	return httpd_parse_headers(pb, hreq);
 }
-

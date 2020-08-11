@@ -5,7 +5,7 @@
  * @date 18.06.12
  * @author Ilia Vaprol
  */
-
+#include <util/log.h>
 #include <errno.h>
 #include <assert.h>
 #include <string.h>
@@ -13,7 +13,6 @@
 #include <sys/time.h>
 
 #include <util/math.h>
-
 
 #include <net/l4/tcp.h>
 #include <net/lib/tcp.h>
@@ -27,7 +26,7 @@
 #include <mem/misc/pool.h>
 #include <netinet/in.h>
 
-#include <embox/net/sock.h>
+#include "net_sock.h"
 
 #include <kernel/sched/sched_lock.h>
 #include <fs/idesc_event.h>
@@ -68,7 +67,7 @@ static int tcp_init(struct sock *sk) {
 	tcp_sk = to_tcp_sock(sk);
 	assert(tcp_sk != NULL);
 
-	debug_print(3, "tcp_init: sk %p\n", to_sock(tcp_sk));
+	log_debug("sk %p", to_sock(tcp_sk));
 
 	tcp_sk->p_sk = tcp_sk->p_sk; /* already initialized */
 	tcp_sk->state = TCP_CLOSED;
@@ -100,7 +99,7 @@ static int tcp_close(struct sock *sk) {
 	tcp_sk = to_tcp_sock(sk);
 	assert(tcp_sk != NULL);
 
-	debug_print(3, "tcp_close: sk %p\n", to_sock(tcp_sk));
+	log_debug("sk %p", to_sock(tcp_sk));
 
 	tcp_sock_lock(tcp_sk, TCP_SYNC_STATE);
 	{
@@ -167,7 +166,7 @@ static int tcp_connect(struct sock *sk,
 	tcp_sk = to_tcp_sock(sk);
 	assert(tcp_sk != NULL);
 
-	debug_print(3, "tcp_connect: sk %p\n", to_sock(tcp_sk));
+	log_debug("sk %p", to_sock(tcp_sk));
 
 	tcp_sock_lock(tcp_sk, TCP_SYNC_STATE);
 	{
@@ -264,7 +263,7 @@ static int tcp_listen(struct sock *sk, int backlog) {
 	tcp_sk = to_tcp_sock(sk);
 	assert(tcp_sk != NULL);
 
-	debug_print(3, "tcp_listen: sk %p\n", to_sock(tcp_sk));
+	log_debug("sk %p", to_sock(tcp_sk));
 
 	tcp_sock_lock(tcp_sk, TCP_SYNC_STATE);
 	{
@@ -329,8 +328,7 @@ static int tcp_accept(struct sock *sk, struct sockaddr *addr,
 	assert(newsk != NULL);
 
 	tcp_sk = to_tcp_sock(sk);
-	debug_print(3, "tcp_accept: sk %p, st%d\n",
-			to_sock(tcp_sk), tcp_sk->state);
+	log_debug("sk %p, st%d", to_sock(tcp_sk), tcp_sk->state);
 
 	assert(tcp_sk->state < TCP_MAX_STATE);
 	if (tcp_sk->state != TCP_LISTEN) {
@@ -376,39 +374,69 @@ static int tcp_accept(struct sock *sk, struct sockaddr *addr,
 	return 0;
 }
 
-static int tcp_write(struct tcp_sock *tcp_sk, void *buff, size_t len) {
+static int tcp_write(struct tcp_sock *tcp_sk, struct msghdr * msg) {
+	size_t iov_len;
+	int full_len;
 	void *pb;
 	struct sk_buff *skb;
 	int ret;
+	size_t skb_len;
+	int tran_len;
+	int cp_len;
+	int cp_off = 0;
+	int i;
 
-	pb = buff;
-	while (len != 0) {
-		/* Previous comment: try to send wholly msg
-		 * We must pass no more than 64k bytes to underlaying IP level */
-		size_t bytes = min(len, IP_MAX_PACKET_LEN - MAX_HEADER_SIZE);
-		skb = NULL; /* alloc new pkg */
+	full_len = 0;
+	tran_len = 0;
+	for (i = 0; i < msg->msg_iovlen; i ++) {
+		full_len += msg->msg_iov[i].iov_len;
+	}
 
-		ret = alloc_prep_skb(tcp_sk, 0, &bytes, &skb);
-		if (ret != 0) {
-			break;
+	iov_len = 0;
+	skb_len = 0;
+
+	for (i = 0; tran_len < full_len; ) {
+		if (0 == iov_len) {
+			pb = msg->msg_iov[i].iov_base;
+			iov_len = msg->msg_iov[i].iov_len;
+			i++;
 		}
 
-		debug_print(3, "tcp_sendmsg: sending len %d\n", bytes);
+		if (0 == skb_len) {
+			cp_off = 0;
+			skb_len = min((full_len - tran_len), IP_MAX_PACKET_LEN - MAX_HEADER_SIZE);
+			skb = NULL; /* alloc new pkg */
 
-		tcp_build(skb->h.th,
+			ret = alloc_prep_skb(tcp_sk, 0, &skb_len, &skb);
+			if (ret != 0) {
+				break;
+			}
+
+			tcp_build(skb->h.th,
 				sock_inet_get_dst_port(to_sock(tcp_sk)),
 				sock_inet_get_src_port(to_sock(tcp_sk)),
 				TCP_MIN_HEADER_SIZE, tcp_sk->self.wind.value);
+		}
 
-		memcpy(skb->h.th + 1, pb, bytes);
-		pb += bytes;
-		len -= bytes;
-		/* Fill TCP header */
-		skb->h.th->psh = (len == 0);
-		tcp_set_ack_field(skb->h.th, tcp_sk->rem.seq);
-		send_seq_from_sock(tcp_sk, skb);
+		cp_len = min(iov_len, skb_len);
+
+		memcpy(((void *)(skb->h.th + 1) + cp_off), pb, cp_len);
+		iov_len -= cp_len;
+		pb += cp_len;
+		skb_len -= cp_len;
+		tran_len += cp_len;
+		cp_off += cp_len;
+
+		if (0 == skb_len) {
+			/* Fill TCP header */
+			skb->h.th->psh = (iov_len == 0);
+			tcp_set_ack_field(skb->h.th, tcp_sk->rem.seq);
+			send_seq_from_sock(tcp_sk, skb);
+			cp_off = 0;
+		}
 	}
-	return pb - buff;
+
+	return tran_len;
 }
 
 #if MAX_SIMULTANEOUS_TX_PACK > 0
@@ -451,7 +479,7 @@ static int tcp_sendmsg(struct sock *sk, struct msghdr *msg, int flags) {
 	}
 
 	tcp_sk = to_tcp_sock(sk);
-	debug_print(3, "tcp_sendmsg: sk %p\n", to_sock(tcp_sk));
+	log_debug("sk %p", to_sock(tcp_sk));
 
 sendmsg_again:
 	assert(tcp_sk->state < TCP_MAX_STATE);
@@ -485,7 +513,7 @@ sendmsg_again:
 		}
 		sched_unlock();
 
-		len = tcp_write(tcp_sk, msg->msg_iov->iov_base, msg->msg_iov->iov_len);
+		len = tcp_write(tcp_sk, msg);
 		ret = tcp_wait_tx_ready(sk, timeout);
 		if (0 > ret) {
 			return ret;
@@ -509,7 +537,7 @@ static int tcp_recvmsg(struct sock *sk, struct msghdr *msg,
 
 	tcp_sk = to_tcp_sock(sk);
 
-	debug_print(3, "tcp_recvmsg: sk %p\n", to_sock(tcp_sk));
+	log_debug("sk %p", to_sock(tcp_sk));
 
 	assert(tcp_sk->state < TCP_MAX_STATE);
 	switch (tcp_sk->state) {

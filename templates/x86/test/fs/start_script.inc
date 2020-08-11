@@ -9,5 +9,11 @@
 "export PWD=/",
 "export HOME=/",
 
-"mkdir /mnt",
-"mkdir /mnt/fs_test",
+"telnetd &",
+
+"mkdir -v /mnt",
+"mkdir -v /mnt/fs_test",
+
+"mkdir -v /tmp",
+"mkfs -q /dev/ram0 8192",
+"mount -t ramfs  /dev/ram0 /tmp",

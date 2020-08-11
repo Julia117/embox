@@ -32,8 +32,10 @@
 #include <framework/cmd/api.h>
 #include <embox/unit.h>
 
-#include <kernel/task.h>
+#include <mem/sysmalloc.h>
 
+#include <kernel/task.h>
+#include <kernel/task/resource/module_ptr.h>
 
 
 #define PROMPT_FMT OPTION_STRING_GET(prompt)
@@ -168,11 +170,12 @@ static void * run_cmd(void *data) {
 		/* running noninteractive */
 	}
 
+	task_self_module_ptr_set(cmd2mod(cdata.cmd));
 	ret = cmd_exec(cdata.cmd, cdata.argc, cdata.argv);
 	if (ret != 0) {
 		printf("%s: Command returned with code %d: %s\n",
 				cmd_name(cdata.cmd), ret, strerror(-ret));
-		return (void *)ret; /* error: ret */
+		return (void *) (uintptr_t) ret; /* error: ret */
 	}
 
 	return NULL; /* ok */
@@ -327,6 +330,7 @@ static void tish_run(void) {
 	char *line;
 	char prompt_buf[PROMPT_BUF_LEN];
 	const char *prompt;
+	int err;
 
 	/**
 	 * Set the completion callback. This will be called every time the
@@ -369,7 +373,9 @@ static void tish_run(void) {
 		/* Do something with the string. */
 		if (line[0] != '\0' && line[0] != '/') {
 			add_history(line); /* Add to the history. */
-			tish_exec(line);
+			err = tish_exec(line);
+			if (err)
+				printf("tish error: #%d\n", err);
 		} else if (!strncmp(line,"/historylen",11)) {
 			/* The "/historylen" command will change the history len. */
 			int len = atoi(line+11);
@@ -380,7 +386,8 @@ static void tish_run(void) {
 
 		tish_collect_bg_childs();
 
-		free(line);
+		/* TODO now linenoise use sysalloc for memory allocation */
+		sysfree(line);
 	}
 }
 
@@ -389,3 +396,8 @@ SHELL_DEF({
 	.exec = tish_exec,
 	.run  = tish_run,
 	});
+
+int main(int argc, char **argv) {
+	tish_run();
+	return 0;
+}

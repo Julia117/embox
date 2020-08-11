@@ -14,7 +14,7 @@
 
 #include <kernel/task/resource/security.h>
 #include <kernel/task/resource/u_area.h>
-#include <security/smac.h>
+#include <security/smac/smac.h>
 
 int main(int argc, char *argv[]) {
 	struct task_u_area *uarea = task_self_resource_u_area();
@@ -29,7 +29,6 @@ int main(int argc, char *argv[]) {
 	char *newargv[5];
 	int newargc;
 
-	getopt_init();
 
 	while (-1 != (opt = getopt(argc, argv, "c:"))) {
 		switch(opt) {

@@ -11,11 +11,15 @@
 "route add default gw 10.0.2.10 eth0",
 
 "bootpc eth0",
+"ifconfig",
+"route",
 
 "ping 10.0.2.10",
-"ping 8.8.8.8",
-"ping google.com",
+"ping 192.168.128.128",
+/* FIXME Fails too often.
+ * "ping 192.168.128.128.xip.io",
+ */
 "httpd &",
 "telnetd &",
-"dropbeard",
+"service dropbear -F",
 "snmpd &",

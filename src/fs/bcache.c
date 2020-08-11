@@ -17,11 +17,11 @@
 
 #include <fs/bcache.h>
 
-
 #include <embox/unit.h>
 EMBOX_UNIT_INIT(bcache_init);
 
-#define BCACHE_SIZE OPTION_GET(NUMBER, bcache_size)
+#define BCACHE_SIZE   OPTION_GET(NUMBER, bcache_size)
+#define BCACHE_ALIGN  OPTION_GET(NUMBER, bcache_align)
 
 POOL_DEF(buffer_head_pool, struct buffer_head, BCACHE_SIZE);
 static DLIST_DEFINE(bh_list);
@@ -34,10 +34,10 @@ POOL_DEF(bcach_ht_item_pool, struct hashtable_item, BCACHE_SIZE);
 
 static struct hashtable *bcache = &bcache_ht;
 static struct mutex bcache_mutex;
-static int graw_buffers(block_dev_t *bdev, int block, size_t size);
+static int graw_buffers(struct block_dev *bdev, int block, size_t size);
 static void free_more_memory(size_t size);
 
-struct buffer_head *bcache_getblk_locked(block_dev_t *bdev, int block, size_t size) {
+struct buffer_head *bcache_getblk_locked(struct block_dev *bdev, int block, size_t size) {
 	struct buffer_head key = { .bdev = bdev, .block = block };
 	struct buffer_head *bh;
 
@@ -99,7 +99,7 @@ static void free_more_memory(size_t size) {
 	}
 }
 
-static int graw_buffers(block_dev_t *bdev, int block, size_t size) {
+static int graw_buffers(struct block_dev *bdev, int block, size_t size) {
 	struct buffer_head *bh;
 	struct hashtable_item *ht_item;
 
@@ -117,7 +117,7 @@ static int graw_buffers(block_dev_t *bdev, int block, size_t size) {
 	bh->bdev = bdev;
 	bh->block = block;
 	bh->blocksize = size;
-	bh->data = sysmalloc(size); /* TODO kmalloc */
+	bh->data = sysmemalign(BCACHE_ALIGN, size);
 
 	if (!bh->data) {
 		pool_free(&buffer_head_pool, bh);

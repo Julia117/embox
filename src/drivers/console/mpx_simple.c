@@ -142,7 +142,7 @@ static int indev_event_cb(struct input_dev *indev) {
 
 static int vc_mpx_init(void) {
 	struct input_dev *indev;
-	const char *devlist[] = {"keyboard", "mouse", NULL};
+	const char *devlist[] = {"ps-keyboard", "ps-mouse", NULL};
 	const char **p;
 
 	for (p = devlist; *p != NULL; p++) {
@@ -155,7 +155,7 @@ static int vc_mpx_init(void) {
 		}
 	}
 
-	if (NULL == (curfb = fb_lookup("fb0"))) {
+	if (NULL == (curfb = fb_lookup(0))) {
 		return -ENOENT;
 	}
 	return 0;

@@ -1,34 +1,58 @@
-
+# https://github.com/JuliaLang/openlibm After merge mips supporting
 PKG_NAME := openlibm
-PKG_VER := ef29d06db1b57c415cbee51b90b492ae89812b5d
+PKG_VER := v0.7.0
 
-PKG_DOWNLOADS_SEPARATE := true
+# PKG_DOWNLOADS_SEPARATE := true
+PKG_SOURCES := https://github.com/JuliaMath/openlibm/archive/$(PKG_VER).tar.gz
 
-PKG_SOURCES := https://github.com/JuliaLang/$(PKG_NAME)/archive/$(PKG_VER).zip
-PKG_PATCHES := openlibm_embox.patch
+PKG_MD5 := 3fddbe1683e07a7b2791580d55d5ca7e
 
-PKG_MD5 := a8d4531e2d35384d244977fce009dbe2
+PKG_PATCHES := patch.txt
 
 include $(EXTBLD_LIB)
+include $(ROOT_DIR)/mk/core/compiler.mk
 
+ifeq ($(COMPILER),clang)
+COMPILER_SPEC := "USECLANG=1"
+else
+COMPILER_SPEC := "USEGCC=1"
 OLIBM_ARCH ?=
 ifneq ($(filter x86 usermode86,$(ARCH)),)
-OLIBM_ARCH := i386
+OLIBM_ARCH := i387
 endif
+
+ifneq ($(filter mips,$(ARCH)),)
+OLIBM_ARCH := mips
+endif
+
+ifneq ($(filter ppc powerpc,$(ARCH)),)
+OLIBM_ARCH := powerpc
+endif
+
 ifeq ($(ARCH), arm)
+OLIBM_CPU  := $(subst -mcpu=,,$(filter -mcpu=%,$(CFLAGS)))
+ifeq ($(strip $(OLIBM_CPU)),cortex-m7)
+# We do not pass -march=armv7e-m because it does not working together with -mcpu=cortex-m7
+# See https://bugs.launchpad.net/gcc-arm-embedded/+bug/1592635
+OLIBM_ARCH :=""
+else
 OLIBM_ARCH := $(subst -march=,,$(filter -march=%,$(CFLAGS)))
+endif # cortex-m7
+
 ifeq ($(strip $(OLIBM_ARCH)),)
 $(error OLIBM_ARCH -march is undefined)
-endif
-endif
+endif # -march is undefined
+endif # arm 
+
+endif # COMPILER
 
 $(CONFIGURE) :
 	touch $@
 
 $(BUILD) :
 	cd $(PKG_SOURCE_DIR) && ( \
-		make \
-			USEGCC=1 \
+		$(MAKE) \
+			$(COMPILER_SPEC) \
 			ARCH=$(OLIBM_ARCH) \
 			OS=Embox \
 			CC=$(EMBOX_GCC) \

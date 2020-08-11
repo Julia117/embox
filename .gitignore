@@ -7,7 +7,10 @@
 *~
 /tags
 
-## Stuff
+## Build
+/*.img
+
+## Other
 /.dep.inc
 /.dropbox
 /.tmp
@@ -16,6 +19,7 @@
 /conf
 /core
 /dist
+/.vscode
 /download
 mk/.cache
 mk/GNUmakefile
@@ -27,7 +31,22 @@ scripts/qemu/debug_qemu
 scripts/qemu/start_script_my
 scripts/qemu/stop_script_my
 scripts/qemu/tap_dev
+scripts/expect/*.log
+scripts/autotest/*.log
+scripts/autotest/*.img
 third-party/qt/.downloaded
 third-party/qt/qt-everywhere-opensource-src-4.8.4.tar.gz
 third-party/ti/ipc_1_24_00_16
 third-party/ti/syslink_2_21_01_05
+/ext_project
+# Vagrant
+/.vagrant
+/*-console.log
+# Idea and Cmake
+.idea/
+CMakeLists.txt
+backup/
+cmake-build-debug/
+src/.idea/
+src/CMakeLists.txt
+src/cmake-build-debug/

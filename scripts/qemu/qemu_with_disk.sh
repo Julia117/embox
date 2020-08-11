@@ -1,10 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 DATADIR="$(dirname "$0")"
 CONFDIR=./conf
 
 KERNEL=./build/base/bin/embox
-MODS_CONF=$CONFDIR/mods.config
+MODS_CONF=$CONFDIR/mods.conf
 LDS_CONF=$CONFDIR/lds.conf
 BUILD_CONF=$CONFDIR/build.conf
 

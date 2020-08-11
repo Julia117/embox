@@ -15,36 +15,17 @@
 #include <string.h>
 #include <util/dlist.h>
 #include <util/array.h>
+#include <util/log.h>
 #include <mem/misc/pool.h>
 #include <embox/unit.h>
 
 #include <drivers/pci/pci.h>
 #include <drivers/pci/pci_driver.h>
 
-//#define DEBUG_LOG
-#ifdef DEBUG_LOG
-#include <kernel/printk.h>
-#define dprintf(...) printk(__VA_ARGS__)
-#else
-#define dprintf(...) do {} while (0)
-#endif
-
 #define PCI_BUS_N_TO_SCAN OPTION_GET(NUMBER,bus_n_to_scan)
+#define PCI_IRQ_BASE      OPTION_GET(NUMBER,irq_base)
 
 EMBOX_UNIT_INIT(pci_init);
-
-typedef struct pci_slot {
-	uint8_t bus;
-	uint8_t slot;
-	uint8_t func;
-	uint16_t ven;
-	uint16_t dev;
-	uint8_t base_clase;
-	uint8_t subclass;
-	uint8_t rev;
-	uint8_t irq;
-	uint32_t bar[6];
-} pci_slot_t;
 
 POOL_DEF(devs_pool, struct pci_slot_dev, OPTION_GET(NUMBER,dev_quantity));
 
@@ -69,7 +50,8 @@ static int pci_get_slot_info(struct pci_slot_dev *dev) {
 	pci_read_config8(dev->busn, devfn, PCI_BASECLASS_CODE, &dev->baseclass);
 	pci_read_config8(dev->busn, devfn, PCI_SUBCLASS_CODE, &dev->subclass);
 	pci_read_config8(dev->busn, devfn, PCI_REVISION_ID, &dev->rev);
-	pci_read_config8(dev->busn, devfn, PCI_INTERRUPT_LINE, &dev->irq);
+	pci_read_config8(dev->busn, devfn, PCI_INTERRUPT_LINE, &dev->irq_line);
+	pci_read_config8(dev->busn, devfn, PCI_INTERRUPT_PIN, &dev->irq_pin);
 
 	for (bar_num = 0; bar_num < ARRAY_SIZE(dev->bar); bar_num ++) {
 		pci_read_config32(dev->busn, devfn,
@@ -77,6 +59,7 @@ static int pci_get_slot_info(struct pci_slot_dev *dev) {
 	}
 	dev->func = PCI_FUNC(devfn);
 	dev->slot = PCI_SLOT(devfn);
+	dev->irq = pci_irq_number(dev);
 
 	return 0;
 }
@@ -97,7 +80,7 @@ struct pci_slot_dev *pci_insert_dev(char configured,
 	struct pci_slot_dev *new_dev;
 
 	if(NULL == (new_dev = pool_alloc(&devs_pool))) {
-		dprintf("pci dev pool overflow");
+		log_debug("pci dev pool overflow");
 		return NULL;
 	}
 
@@ -112,12 +95,12 @@ struct pci_slot_dev *pci_insert_dev(char configured,
 		pci_get_slot_info(new_dev);
 	}
 	pci_add_dev(new_dev);
-	dprintf("\nAdd pci >> bc %d, sc %d, rev %d, irq %d \n",
+	log_debug("Add pci >> bc %d, sc %d, rev %d, irq %d",
 			new_dev->baseclass, new_dev->subclass, new_dev->rev, new_dev->irq);
 	for (int bar_num = 0; bar_num < ARRAY_SIZE(new_dev->bar); bar_num ++) {
-		dprintf("bar[%d] 0x%X ", bar_num, new_dev->bar[bar_num]);
+		log_raw(LOG_DEBUG, "bar[%d] 0x%X ", bar_num, new_dev->bar[bar_num]);
 	}
-	dprintf("\n fu %d, slot %d \n", new_dev->func, new_dev->slot);
+	log_raw(LOG_DEBUG, "\n fu %d, slot %d \n", new_dev->func, new_dev->slot);
 	return new_dev;
 }
 
@@ -175,4 +158,22 @@ static int pci_init(void) {
 
 	return 0;
 
+}
+
+void pci_set_master(struct pci_slot_dev * slot_dev) {
+	uint16_t cmd;
+	uint8_t lat;
+	uint16_t devfn = PCI_DEVFN(slot_dev->slot, slot_dev->func);
+
+	pci_read_config16(slot_dev->busn, devfn, PCI_COMMAND, &cmd);
+	if (!(cmd & PCI_COMMAND_MASTER)) {
+		cmd |= PCI_COMMAND_MASTER;
+		pci_write_config16(slot_dev->busn, devfn, PCI_COMMAND, cmd);
+	}
+	pci_read_config8(slot_dev->busn, devfn, PCI_LATENCY_TIMER, &lat);
+	if (lat < 16) {
+		log_info("Increasing latency timer of device %02x:%02x to 64\n",
+				slot_dev->busn, devfn);
+		pci_write_config8(slot_dev->busn, devfn, PCI_LATENCY_TIMER, 64);
+	}
 }

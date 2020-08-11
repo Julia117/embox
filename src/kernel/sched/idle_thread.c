@@ -5,7 +5,7 @@
  * @author  Vita Loginova
  * @date    08.12.2014
  */
-
+#include <util/log.h>
 #include <util/err.h>
 #include <hal/arch.h>
 
@@ -27,11 +27,13 @@ int idle_thread_create(void) {
 
 	t = thread_create(THREAD_FLAG_NOTASK | THREAD_FLAG_SUSPENDED, idle_run, NULL);
 	if (err(t)) {
+		log_error(" Couldn't create thread err=%d", err(t));
 		return err(t);
 	}
 
 	task_thread_register(task_kernel_task(), t);
-	thread_set_priority(t, SCHED_PRIORITY_MIN);
+	schedee_priority_set(&t->schedee, SCHED_PRIORITY_MIN);
+	log_debug("idle_schedee = %#x", &t->schedee);
 
 	cpu_init(cpu_get_id(), t);
 	thread_launch(t);

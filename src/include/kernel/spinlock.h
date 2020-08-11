@@ -80,6 +80,8 @@ static inline int __spin_trylock_smp(spinlock_t *lock) {
 #else /* !(SMP || SPIN_DEBUG) */
 
 static inline int __spin_trylock_smp(spinlock_t *lock) {
+	(void)lock;
+
 	return 1;
 }
 
@@ -89,7 +91,7 @@ static inline int __spin_trylock(spinlock_t *lock) {
 	int ret;
 	unsigned int cpu_id = cpu_get_id();
 
-	assert(lock->owner != cpu_id, "Recursive lock of a spin owned by this CPU");
+	assertf(lock->owner != cpu_id, "Recursive lock of a spin owned by this CPU");
 
 	ret = __spin_trylock_smp(lock);
 	if (ret) {
@@ -99,9 +101,11 @@ static inline int __spin_trylock(spinlock_t *lock) {
 #ifdef SPIN_CONTENTION_LIMIT
 	if (ret)
 		lock->contention_count = SPIN_CONTENTION_LIMIT;
-	else
+	else {
 		// TODO this must be atomic dec
-		assert(lock->contention_count--, "Possible spin deadlock");
+		lock->contention_count--;
+		assertf(lock->contention_count, "Possible spin deadlock");
+	}
 #endif
 	return ret;
 }
@@ -113,8 +117,8 @@ static inline void __spin_lock(spinlock_t *lock) {
 
 static inline void __spin_unlock(spinlock_t *lock) {
 #if defined(SMP) || defined(SPIN_DEBUG)
-	assert(lock->l == __SPIN_LOCKED, "Unlocking a not locked spin");
-	assert(lock->owner == cpu_get_id(), "Unlocking a spin owned by another CPU");
+	assertf(lock->l == __SPIN_LOCKED, "Unlocking a not locked spin");
+	assertf(lock->owner == cpu_get_id(), "Unlocking a spin owned by another CPU");
 	lock->owner = -1u;
 	__barrier();  // XXX this must be SMP barrier
 	lock->l = __SPIN_UNLOCKED;
@@ -246,7 +250,7 @@ static inline void spin_unlock_ipl_enable(spinlock_t *lock) {
 	for (spinlock_t *__lock = (lock);                 !__done; ) \
 	for (int __cond = !!SPIN_LOCK_COND(__lock, cond); !__done;   \
 			({ if (__cond) spin_unlock(__lock); }))              \
-	while (!__done && (__done = 1)) /* break/continue control this loop */  \
+	while (!__done && (++__done)) /* break/continue control this loop */  \
 		if (__cond)
 
 #define SPIN_PROTECTED_DO(lock, expr) \

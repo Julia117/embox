@@ -45,11 +45,6 @@ extern "C" {
 }
 #endif
 
-struct sockaddr_un {
-    unsigned short sun_family;  /* AF_UNIX */
-    char sun_path[108];
-};
-
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -79,11 +74,5 @@ static inline int socketpair(int domain, int type, int protocol, int sv[2]) {
 
 #define NI_MAXHOST 1
 #define NI_NUMERICHOST 2
-
-static inline
-int pthread_sigmask(int how, const sigset_t *set, sigset_t *oldset) {
-	DPRINT();
-	return 0;
-}
 
 #endif /* ZEROMQ_EMBOX_COMPAT_H_ */

@@ -153,6 +153,8 @@ extern int   pthread_join(pthread_t, void **);
 extern int   pthread_key_create(pthread_key_t *, void (*)(void *));
 extern int   pthread_key_delete(pthread_key_t);
 
+extern int   pthread_kill(pthread_t thread, int sig);
+
 extern int   pthread_mutex_destroy(pthread_mutex_t *);
 //extern int   pthread_mutex_getprioceiling(const pthread_mutex_t *, int *);
 extern int   pthread_mutex_init(pthread_mutex_t *, const pthread_mutexattr_t *);
@@ -160,6 +162,7 @@ extern int   pthread_mutex_lock(pthread_mutex_t *);
 //extern int   pthread_mutex_setprioceiling(pthread_mutex_t *, int, int *);
 extern int   pthread_mutex_trylock(pthread_mutex_t *);
 extern int   pthread_mutex_unlock(pthread_mutex_t *);
+extern int   pthread_mutex_timedlock(pthread_mutex_t *mutex, const struct timespec *abstime);
 
 extern int   pthread_mutexattr_destroy(pthread_mutexattr_t *);
 //extern int   pthread_mutexattr_getprioceiling(const pthread_mutexattr_t *, int *);
@@ -174,13 +177,13 @@ extern int   pthread_mutexattr_settype(pthread_mutexattr_t *, int);
 
 extern int   pthread_once(pthread_once_t *, void (*)(void));
 
-//extern int   pthread_rwlock_destroy(pthread_rwlock_t *);
-//extern int   pthread_rwlock_init(pthread_rwlock_t *, const pthread_rwlockattr_t *);
-//extern int   pthread_rwlock_rdlock(pthread_rwlock_t *);
-//extern int   pthread_rwlock_tryrdlock(pthread_rwlock_t *);
-//extern int   pthread_rwlock_trywrlock(pthread_rwlock_t *);
-//extern int   pthread_rwlock_unlock(pthread_rwlock_t *);
-//extern int   pthread_rwlock_wrlock(pthread_rwlock_t *);
+extern int   pthread_rwlock_destroy(pthread_rwlock_t *);
+extern int   pthread_rwlock_init(pthread_rwlock_t *, const pthread_rwlockattr_t *);
+extern int   pthread_rwlock_rdlock(pthread_rwlock_t *);
+extern int   pthread_rwlock_tryrdlock(pthread_rwlock_t *);
+extern int   pthread_rwlock_trywrlock(pthread_rwlock_t *);
+extern int   pthread_rwlock_unlock(pthread_rwlock_t *);
+extern int   pthread_rwlock_wrlock(pthread_rwlock_t *);
 
 //extern int   pthread_rwlockattr_destroy(pthread_rwlockattr_t *);
 //extern int   pthread_rwlockattr_getpshared(const pthread_rwlockattr_t *, int *);

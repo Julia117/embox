@@ -1,7 +1,11 @@
 #include <embox/unit.h>
-#include <drivers/ahci.h>
+#include <drivers/ahci/ahci.h>
 #include <hal/reg.h>
 #include <kernel/printk.h>
+
+#include <hal/mmu.h>
+#include <drivers/common/memory.h>
+#include <mem/vmem.h>
 
 EMBOX_UNIT_INIT(ahci_ti8168_init);
 
@@ -20,3 +24,7 @@ int ahci_ti8168_init(void) {
 	register_ahci_hba(&ti8168_hba);
 	return 0;
 }
+
+PERIPH_MEMORY_DEFINE(ahci_ti8168, 0x4A140000, 0x1000);
+
+PERIPH_MEMORY_DEFINE(ti816x_power, 0x48180000, 0x1000);

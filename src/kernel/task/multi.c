@@ -14,16 +14,17 @@
 #include <kernel/panic.h>
 #include <kernel/sched.h>
 #include <kernel/sched/sched_lock.h>
+#include <kernel/sched/schedee_priority.h>
 #include <kernel/task.h>
 #include <kernel/task/kernel_task.h>
 #include <kernel/task/resource.h>
 #include <kernel/task/resource/errno.h>
 #include <kernel/task/task_table.h>
 #include <kernel/thread.h>
-#include <kernel/thread/thread_priority.h>
 
 #include <util/binalign.h>
 #include <util/err.h>
+#include <compiler.h>
 
 struct task_trampoline_arg {
 	void * (*run)(void *);
@@ -33,7 +34,11 @@ struct task_trampoline_arg {
 struct task *task_self(void) {
 	struct thread *th = thread_self();
 
-	assert(th);
+	if (!th) {
+		/* Scheduler was not started yet */
+		return task_kernel_task();
+	}
+
 	assert(th->task);
 
 	return th->task;
@@ -107,7 +112,8 @@ int new_task(const char *name, void * (*run)(void *), void *arg) {
 			goto out_tablefree;
 		}
 
-		thread_set_priority(thd, thread_get_priority(thread_self()));
+		schedee_priority_set(&thd->schedee,
+			schedee_priority_get(&thread_self()->schedee));
 
 		thread_detach(thd);
 		thread_launch(thd);
@@ -183,7 +189,8 @@ int task_prepare(const char *name) {
 			goto out_unlock;
 		}
 
-		thread_set_priority(thd, thread_get_priority(thread_self()));
+		schedee_priority_set(&thd->schedee,
+			schedee_priority_get(&thread_self()->schedee));
 
 		self_task = thread_stack_alloc(thd,
 				sizeof *self_task + TASK_RESOURCE_SIZE);
@@ -251,6 +258,18 @@ void task_init(struct task *tsk, int id, struct task *parent, const char *name,
 	task_resource_init(tsk);
 }
 
+static void task_make_children_daemons(struct task *task) {
+	struct task *child;
+	struct task *krn_task = task_kernel_task();
+
+	dlist_foreach_entry(child, &task->child_list, child_lnk) {
+		dlist_del_init(&child->child_lnk);
+
+		child->parent = krn_task;
+		dlist_add_prev(&child->child_lnk, &krn_task->child_list);
+	}
+}
+
 void task_do_exit(struct task *task, int status) {
 	struct thread *thr, *main_thr;
 
@@ -263,6 +282,10 @@ void task_do_exit(struct task *task, int status) {
 
 	/* Deinitialize all resources */
 	task_resource_deinit(task);
+
+	/* Make all children of the specified task daemons (or, more generally, orphans).
+	 * It is made by simply setting up the parent task of each child to kernel_task. */
+	task_make_children_daemons(task);
 
 	/*
 	 * Terminate all threads except main thread. If we terminate current
@@ -287,7 +310,7 @@ void task_start_exit(void) {
 	assert(critical_inside(CRITICAL_SCHED_LOCK));
 }
 
-void __attribute__((noreturn)) task_finish_exit(void) {
+void _NORETURN task_finish_exit(void) {
 
 	assert(critical_inside(CRITICAL_SCHED_LOCK));
 
@@ -301,22 +324,16 @@ void __attribute__((noreturn)) task_finish_exit(void) {
 }
 
 
-void __attribute__((noreturn)) task_exit(void *res) {
+void _NORETURN task_exit(void *res) {
 
 	task_start_exit();
 
-	task_do_exit(task_self(), TASKST_EXITED_MASK | ((int) res & TASKST_EXITST_MASK));
+	task_do_exit(task_self(), TASKST_EXITED_MASK | ((intptr_t) res & TASKST_EXITST_MASK));
 
 	task_finish_exit();
 }
 
-void __attribute__((weak)) task_mmap_deinit(const struct task *task)  {
-
-}
-
 void task_delete(struct task *tsk) {
-	task_mmap_deinit(tsk);
-
 	dlist_del(&tsk->child_lnk);
 	task_table_del(task_get_id(tsk));
 	thread_delete(task_get_main(tsk));
@@ -342,28 +359,12 @@ int task_set_priority(struct task *tsk, task_priority_t new_prior) {
 
 		task_foreach_thread(t, tsk) {
 			/* reschedule thread */
-			thread_set_priority(t, THREAD_PRIORITY_NORMAL + new_prior);
+			schedee_priority_set(&t->schedee,
+				SCHED_PRIORITY_NORMAL + new_prior);
 		}
 
 	}
 	sched_unlock();
-
-	return 0;
-}
-
-int task_notify_switch(struct thread *prev, struct thread *next) {
-	task_notifing_resource_hnd notify_res;
-	int res;
-
-	if (prev->task == next->task) {
-		return 0;
-	}
-
-	task_notifing_resource_foreach(notify_res) {
-		if (0 != (res = notify_res(prev, next))) {
-			return res;
-		}
-	}
 
 	return 0;
 }

@@ -10,8 +10,7 @@
 #include <stdbool.h>
 #include <util/array.h>
 
-#include <stm32f4xx_gpio.h>
-#include <stm32f4xx_rcc.h>
+#include <drivers/gpio/gpio_driver.h>
 
 #include "libleddrv_ll.h"
 
@@ -20,144 +19,132 @@
 static_assert(LINES_N * LEDS_PER_LINE == LEDDRV_LED_N);
 
 struct leddrv_pin_desc {
-	GPIO_TypeDef *gpio; /**< gpio port  */
-	unsigned int pin; /**< pin mask */
+	int gpio; /**< port */
+	int pin; /**< pin mask */
 };
 
-#define LEDBLOCK_MAJOR 1
-#define LEDBLOCK_MINOR 1
+#define LEDBLOCK_MAJOR 2
+#define LEDBLOCK_MINOR 0
 
 #if LEDBLOCK_MAJOR == 0
 static const struct leddrv_pin_desc leddrv_clk =
-	{ .gpio = GPIOE, .pin = GPIO_Pin_7 };
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 7) };
 
 static const struct leddrv_pin_desc leddrv_datas[] = {
 	/* prototype register numeration */
-	{ .gpio = GPIOB, .pin = GPIO_Pin_14 },
-	{ .gpio = GPIOB, .pin = GPIO_Pin_15 },
-	{ .gpio = GPIOE, .pin = GPIO_Pin_15 },
-	{ .gpio = GPIOE, .pin = GPIO_Pin_13 },
-	{ .gpio = GPIOE, .pin = GPIO_Pin_14 },
-	{ .gpio = GPIOE, .pin = GPIO_Pin_11 },
-	{ .gpio = GPIOE, .pin = GPIO_Pin_12 },
-	{ .gpio = GPIOE, .pin = GPIO_Pin_10 },
-	{ .gpio = GPIOE, .pin = GPIO_Pin_9 },
-	{ .gpio = GPIOE, .pin = GPIO_Pin_8 },
+	{ .gpio = GPIO_PORT_B, .pin = (1 << 14) },
+	{ .gpio = GPIO_PORT_B, .pin = (1 << 15) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 15) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 13) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 14) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 11) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 12) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 10) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 9) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 8) },
 };
 #endif
 
-
 #if LEDBLOCK_MAJOR == 1 && LEDBLOCK_MINOR == 0
 static const struct leddrv_pin_desc leddrv_clk =
-	{ .gpio = GPIOE, .pin = GPIO_Pin_7 };
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 7) };
 
 static const struct leddrv_pin_desc leddrv_datas[] = {
 	/* v1 register numeration, forward, wrong */
-	{ .gpio = GPIOE, .pin = GPIO_Pin_12 },
-	{ .gpio = GPIOE, .pin = GPIO_Pin_14 },
-	{ .gpio = GPIOE, .pin = GPIO_Pin_13 },
-	{ .gpio = GPIOB, .pin = GPIO_Pin_14 },
-	{ .gpio = GPIOB, .pin = GPIO_Pin_15 },
-	{ .gpio = GPIOE, .pin = GPIO_Pin_15 },
-	{ .gpio = GPIOE, .pin = GPIO_Pin_11 },
-	{ .gpio = GPIOE, .pin = GPIO_Pin_10 },
-	{ .gpio = GPIOE, .pin = GPIO_Pin_9 },
-	{ .gpio = GPIOE, .pin = GPIO_Pin_8 },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 12) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 14) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 13) },
+	{ .gpio = GPIO_PORT_B, .pin = (1 << 14) },
+	{ .gpio = GPIO_PORT_B, .pin = (1 << 15) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 15) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 11) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 10) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 9) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 8) },
 };
 #endif
 
 #if LEDBLOCK_MAJOR == 1 && LEDBLOCK_MINOR == 1
 static const struct leddrv_pin_desc leddrv_clk =
-	{ .gpio = GPIOE, .pin = GPIO_Pin_8 };
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 8) };
 
 static const struct leddrv_pin_desc leddrv_datas[] = {
 	/* prototype register numeration */
-	{ .gpio = GPIOE, .pin = GPIO_Pin_11 },
-	{ .gpio = GPIOE, .pin = GPIO_Pin_13 },
-	{ .gpio = GPIOE, .pin = GPIO_Pin_14 },
-	{ .gpio = GPIOB, .pin = GPIO_Pin_14 },
-	{ .gpio = GPIOD, .pin = GPIO_Pin_8 },
-	{ .gpio = GPIOE, .pin = GPIO_Pin_15 },
-	{ .gpio = GPIOE, .pin = GPIO_Pin_12 },
-	{ .gpio = GPIOE, .pin = GPIO_Pin_9 },
-	{ .gpio = GPIOE, .pin = GPIO_Pin_10 },
-	{ .gpio = GPIOE, .pin = GPIO_Pin_7 },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 11) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 13) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 14) },
+	{ .gpio = GPIO_PORT_B, .pin = (1 << 14) },
+	{ .gpio = GPIO_PORT_D, .pin = (1 << 8) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 15) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 12) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 9) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 10) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 7) },
 };
 #endif
 
 #if LEDBLOCK_MAJOR == 2
 static const struct leddrv_pin_desc leddrv_shf_clk =
-	{ .gpio = GPIOE, .pin = GPIO_Pin_10 };
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 8) };
 static const struct leddrv_pin_desc leddrv_str_clk =
-	{ .gpio = GPIOE, .pin = GPIO_Pin_8 };
+	{ .gpio = GPIO_PORT_D, .pin = (1 << 9) };
 static const struct leddrv_pin_desc leddrv_datas[] = {
-	{ .gpio = GPIOE, .pin = GPIO_Pin_9 },
-	{ .gpio = GPIOE, .pin = GPIO_Pin_11 }, /* not used */
-	{ .gpio = GPIOE, .pin = GPIO_Pin_11 }, /* not used */
-	{ .gpio = GPIOE, .pin = GPIO_Pin_11 }, /* not used */
-	{ .gpio = GPIOE, .pin = GPIO_Pin_11 }, /* not used */
-	{ .gpio = GPIOE, .pin = GPIO_Pin_11 }, /* not used */
-	{ .gpio = GPIOE, .pin = GPIO_Pin_11 }, /* not used */
-	{ .gpio = GPIOE, .pin = GPIO_Pin_11 }, /* not used */
-	{ .gpio = GPIOE, .pin = GPIO_Pin_11 }, /* not used */
-	{ .gpio = GPIOE, .pin = GPIO_Pin_11 }, /* not used */
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 11) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 13) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 14) },
+	{ .gpio = GPIO_PORT_B, .pin = (1 << 14) },
+	{ .gpio = GPIO_PORT_D, .pin = (1 << 8) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 15) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 12) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 9) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 10) },
+	{ .gpio = GPIO_PORT_E, .pin = (1 << 7) },
+};
+
+static const struct leddrv_pin_desc leddrv_alarms[] = {
+	{ .gpio = GPIO_PORT_D, .pin = (1 << 3) },
+	{ .gpio = GPIO_PORT_D, .pin = (1 << 4) },
+	{ .gpio = GPIO_PORT_D, .pin = (1 << 1) },
+	{ .gpio = GPIO_PORT_C, .pin = (1 << 12) },
+	{ .gpio = GPIO_PORT_A, .pin = (1 << 10) },
+	{ .gpio = GPIO_PORT_A, .pin = (1 << 8) },
+	{ .gpio = GPIO_PORT_D, .pin = (1 << 2) },
+	{ .gpio = GPIO_PORT_D, .pin = (1 << 7) },
+	{ .gpio = GPIO_PORT_D, .pin = (1 << 5) },
+	{ .gpio = GPIO_PORT_D, .pin = (1 << 6) },
 };
 #endif
 
 static_assert(ARRAY_SIZE(leddrv_datas) == LINES_N);
+static_assert(ARRAY_SIZE(leddrv_alarms) == LINES_N);
 
 int leddrv_ll_error(int n) {
-	const uint16_t mask = GPIO_Pin_9 | GPIO_Pin_10;
-	int all_voltages = (GPIO_ReadInputData(GPIOD) & mask) == mask;
-	return !all_voltages;
+	int line = n / LEDS_PER_LINE;
+	return !(gpio_get(leddrv_alarms[line].gpio, leddrv_alarms[line].pin)
+			& leddrv_alarms[line].pin);
+}
+
+static inline void leddrv_pin_init(const struct leddrv_pin_desc *pd, unsigned int mode) {
+	gpio_setup_mode(pd->gpio, pd->pin, mode);
 }
 
 void leddrv_ll_init(void) {
-	GPIO_InitTypeDef GPIO_InitStructure;
+	leddrv_pin_init(&leddrv_shf_clk, GPIO_MODE_OUTPUT);
+	leddrv_pin_init(&leddrv_str_clk, GPIO_MODE_OUTPUT);
+	for (int i = 0; i < LINES_N; ++i) {
+		leddrv_pin_init(&leddrv_datas[i], GPIO_MODE_OUTPUT);
+	}
 
-	/* Enable GPIOs clocks */
-	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOE | RCC_AHB1Periph_GPIOB | RCC_AHB1Periph_GPIOD, ENABLE);
-
-	/* Base GPIOs config for output */
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-	GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_OUT;
-	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
-	GPIO_InitStructure.GPIO_PuPd  = GPIO_PuPd_NOPULL;
-
-	GPIO_InitStructure.GPIO_Pin = \
-		GPIO_Pin_7 |
-		GPIO_Pin_8 |
-		GPIO_Pin_9 |
-		GPIO_Pin_10 |
-		GPIO_Pin_11 |
-		GPIO_Pin_12 |
-		GPIO_Pin_13 |
-		GPIO_Pin_14 |
-		GPIO_Pin_15;
-	GPIO_Init(GPIOE, &GPIO_InitStructure);
-
-	GPIO_InitStructure.GPIO_Pin = \
-		GPIO_Pin_14 |
-		GPIO_Pin_15;
-	GPIO_Init(GPIOB, &GPIO_InitStructure);
-
-	GPIO_InitStructure.GPIO_Pin = \
-		GPIO_Pin_8;
-	GPIO_Init(GPIOD, &GPIO_InitStructure);
-
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
-	GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IN;
-	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
-	GPIO_InitStructure.GPIO_PuPd  = GPIO_PuPd_NOPULL;
-	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_10 | GPIO_Pin_9;
-	GPIO_Init(GPIOD, &GPIO_InitStructure);
+	for (int i = 0; i < LINES_N; ++i) {
+		leddrv_pin_init(&leddrv_alarms[i], GPIO_MODE_INPUT);
+	}
 }
 
 #if LEDBLOCK_MAJOR == 1
 static void leddrv_ll_shift_out(int led_in_line, unsigned char leds_state[LEDDRV_LED_N]) {
 
 	/* set clock low */
-	GPIO_ResetBits(leddrv_clk.gpio, leddrv_clk.pin);
+	gpio_set(leddrv_clk.gpio, leddrv_clk.pin, GPIO_PIN_LOW);
 
 	/* set data in for all `led_in_line'-th led */
 	for (int line = 0; line < LINES_N; ++line) {
@@ -166,15 +153,15 @@ static void leddrv_ll_shift_out(int led_in_line, unsigned char leds_state[LEDDRV
 
 		if (led_state) {
 			/* set data high */
-			GPIO_SetBits(line_desk->gpio, line_desk->pin);
+			gpio_set(line_desk->gpio, line_desk->pin, GPIO_PIN_HIGH);
 		} else {
 			/* set data low */
-			GPIO_ResetBits(line_desk->gpio, line_desk->pin);
+			gpio_set(line_desk->gpio, line_desk->pin, GPIO_PIN_LOW);
 		}
 	}
 
 	/* make clock high, shift data to regsiter */
-	GPIO_SetBits(leddrv_clk.gpio, leddrv_clk.pin);
+	gpio_set(leddrv_clk.gpio, leddrv_clk.pin, GPIO_PIN_HIGH);
 }
 
 
@@ -206,23 +193,26 @@ void leddrv_ll_update(unsigned char leds_state[LEDDRV_LED_N]) {
 #if LEDBLOCK_MAJOR == 2
 void leddrv_ll_update(unsigned char leds_state[LEDDRV_LED_N]) {
 
-	GPIO_ResetBits(leddrv_str_clk.gpio, leddrv_str_clk.pin);
+	gpio_set(leddrv_str_clk.gpio, leddrv_str_clk.pin, GPIO_PIN_HIGH);
 
-	for (int i_led = LEDS_PER_LINE; i_led >= 0; --i_led) {
-		const struct leddrv_pin_desc *line_desk = &leddrv_datas[0];
-		const bool led_state = leds_state[i_led];
+	for (int i_led = LEDS_PER_LINE - 1; i_led >= 0; --i_led) {
 
-		GPIO_ResetBits(leddrv_shf_clk.gpio, leddrv_shf_clk.pin);
+		gpio_set(leddrv_shf_clk.gpio, leddrv_shf_clk.pin, GPIO_PIN_LOW);
 
-		if (led_state) {
-			GPIO_SetBits(line_desk->gpio, line_desk->pin);
-		} else {
-			GPIO_ResetBits(line_desk->gpio, line_desk->pin);
+		for (int i_line = 0; i_line < LINES_N; ++i_line) {
+			const struct leddrv_pin_desc *line_desk = &leddrv_datas[i_line];
+			const bool led_state = leds_state[i_line * LEDS_PER_LINE + i_led];
+
+			if (led_state) {
+				gpio_set(line_desk->gpio, line_desk->pin, GPIO_PIN_HIGH);
+			} else {
+				gpio_set(line_desk->gpio, line_desk->pin, GPIO_PIN_LOW);
+			}
 		}
 
-		GPIO_SetBits(leddrv_shf_clk.gpio, leddrv_shf_clk.pin);
+		gpio_set(leddrv_shf_clk.gpio, leddrv_shf_clk.pin, GPIO_PIN_HIGH);
 	}
 
-	GPIO_SetBits(leddrv_str_clk.gpio, leddrv_str_clk.pin);
+	gpio_set(leddrv_str_clk.gpio, leddrv_str_clk.pin, GPIO_PIN_HIGH);
 }
 #endif

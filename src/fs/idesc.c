@@ -7,19 +7,20 @@
 
 #include <errno.h>
 #include <string.h>
+#include <sys/types.h>
+#include <fcntl.h>
 
 #include <util/dlist.h>
 
 #include <kernel/task.h>
-#include <kernel/task/idesc_table.h>
 #include <kernel/task/resource/idesc_table.h>
 #include <fs/idesc.h>
 
-int idesc_init(struct idesc *idesc, const struct idesc_ops *ops, idesc_access_mode_t amode) {
+int idesc_init(struct idesc *idesc, const struct idesc_ops *ops, mode_t amode) {
 
 	memset(idesc, 0, sizeof(struct idesc));
 
-	idesc->idesc_amode = amode;
+	idesc->idesc_flags = amode;
 
 	idesc->idesc_ops = ops;
 	idesc->idesc_xattrops = NULL;
@@ -29,8 +30,8 @@ int idesc_init(struct idesc *idesc, const struct idesc_ops *ops, idesc_access_mo
 	return 0;
 }
 
-int idesc_check_mode(struct idesc *idesc, idesc_access_mode_t amode) {
-	return idesc->idesc_amode & amode;
+int idesc_check_mode(struct idesc *idesc, mode_t amode) {
+	return (idesc->idesc_flags & O_ACCESS_MASK) == amode;
 }
 
 int idesc_close(struct idesc *idesc, int fd) {

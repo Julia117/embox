@@ -20,7 +20,7 @@
 #include <assert.h>
 #include <util/member.h>
 #include <util/macro.h>
-#include <module/embox/util/DList.h>
+#include <module/embox/util/dlist.h>
 
 /**
  * A service list data structure. It's used both for elements and for list head.
@@ -123,7 +123,6 @@ static inline void dlist_move(struct dlist_head *head, struct dlist_head *list) 
  * @return 1 if list is not empty and zero if empty *
  */
 static inline int dlist_empty(const struct dlist_head *head) {
-	__dlist_debug_check(head);
 	return (head == head->next);
 }
 
@@ -182,10 +181,14 @@ static inline struct dlist_head *dlist_prev(const struct dlist_head *list) {
  *
  */
 #define dlist_prev_entry_or_null(list, element_type, link_member) \
-	member_cast_out_or_null(dlist_prev(list), element_type, link_member)
+	member_cast_out_or_null(!dlist_empty(list) ? dlist_prev(list) : NULL, \
+			element_type, \
+			link_member)
 
 #define dlist_next_entry_or_null(list, element_type, link_member) \
-	member_cast_out_or_null(dlist_next(list), element_type, link_member)
+	member_cast_out_or_null(!dlist_empty(list) ? dlist_next(list) : NULL, \
+			element_type, \
+			link_member)
 
 /**
  * @def dlist_next_if_not_last()

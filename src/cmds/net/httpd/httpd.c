@@ -31,52 +31,7 @@
 #define BUFF_SZ     1024
 
 static char httpd_g_inbuf[BUFF_SZ];
-
-static int httpd_read_http_header(const struct client_info *cinfo, char *buf, size_t buf_sz) {
-	const int sk = cinfo->ci_sock;
-	const char *pattern = "\r\n\r\n";
-	char pattbuf[strlen("\r\n\r\n")];
-	char *pb;
-
-	pb = buf;
-	if (0 > read(sk, pattbuf, sizeof(pattbuf))) {
-		return -errno;
-	}
-	while (0 != strncmp(pattern, pattbuf, sizeof(pattbuf)) && buf_sz > 0) {
-		*(pb++) = pattbuf[0];
-		buf_sz--;
-		memmove(pattbuf, pattbuf + 1, sizeof(pattbuf) - 1);
-		if (0 > read(sk, &pattbuf[sizeof(pattbuf) - 1], 1)) {
-			return -errno;
-		}
-	}
-
-	if (buf_sz == 0) {
-		return -ENOENT;
-	}
-
-	memcpy(pb, pattbuf, sizeof(pattbuf));
-	return pb + sizeof(pattbuf) - buf;
-}
-
-static int httpd_header(const struct client_info *cinfo, int st, const char *msg) {
-	FILE *skf = fdopen(cinfo->ci_sock, "rw");
-
-	if (!skf) {
-		HTTPD_ERROR("can't allocate FILE for socket\n");
-		return -ENOMEM;
-	}
-
-	fprintf(skf,
-		"HTTP/1.1 %d %s\r\n"
-		"Content-Type: %s\r\n"
-		"Connection: close\r\n"
-		"\r\n",
-		st, msg, "text/plain");
-
-	fclose(skf);
-	return 0;
-}
+static char httpd_g_outbuf[BUFF_SZ];
 
 static int httpd_wait_cgi_child(pid_t target, int opts) {
 	pid_t child;
@@ -87,7 +42,7 @@ static int httpd_wait_cgi_child(pid_t target, int opts) {
 
 	if (child == -1) {
 		int err = errno;
-		HTTPD_ERROR("waitpid() : %s\n", strerror(err));
+		httpd_error("waitpid() : %s", strerror(err));
 		return -err;
 	}
 
@@ -104,34 +59,24 @@ static void httpd_on_cgi_child(const struct client_info *cinfo, pid_t child) {
 	}
 }
 
-static void httpd_client_process(const struct client_info *cinfo) {
+static void httpd_client_process(struct client_info *cinfo) {
 	struct http_req hreq;
 	pid_t cgi_child;
-	int ret;
+	int err;
 
-	ret = httpd_read_http_header(cinfo, httpd_g_inbuf, sizeof(httpd_g_inbuf) - 1);
-	if (ret < 0) {
-		HTTPD_ERROR("can't read from client socket: %s\n", strerror(errno));
-		return;
-	}
-	httpd_g_inbuf[ret] = '\0';
-
-	memset(&hreq, 0, sizeof(hreq));
-	if (NULL == httpd_parse_request(httpd_g_inbuf, &hreq)) {
-		HTTPD_ERROR("can't parse request");
-		return;
+	if (0 > (err = httpd_build_request(cinfo, &hreq, httpd_g_inbuf, sizeof(httpd_g_inbuf)))) {
+		httpd_error("can't build request: %s", strerror(-err));
 	}
 
-	HTTPD_DEBUG("%s: method=%s uri_target=%s uri_query=%s\n", __func__,
-			hreq.method,
-			hreq.uri.target,
-			hreq.uri.query);
+	httpd_debug("method=%s uri_target=%s uri_query=%s",
+			   hreq.method, hreq.uri.target, hreq.uri.query);
 
 	if ((cgi_child = httpd_try_respond_script(cinfo, &hreq))) {
 		httpd_on_cgi_child(cinfo, cgi_child);
 	} else if (USE_REAL_CMD && (cgi_child = httpd_try_respond_cmd(cinfo, &hreq))) {
 		httpd_on_cgi_child(cinfo, cgi_child);
-	} else if (httpd_try_respond_file(cinfo, &hreq)) {
+	} else if (httpd_try_respond_file(cinfo, &hreq,
+				httpd_g_outbuf, sizeof(httpd_g_outbuf))) {
 		/* file sent, nothing to do */
 	} else {
 		httpd_header(cinfo, 404, "");
@@ -143,7 +88,6 @@ int main(int argc, char **argv) {
 	const char *basedir;
 #if USE_IP_VER == 4
 	struct sockaddr_in inaddr;
-	const size_t inaddrlen = sizeof(inaddr);
 	const int family = AF_INET;
 
 	inaddr.sin_family = AF_INET;
@@ -151,7 +95,6 @@ int main(int argc, char **argv) {
 	inaddr.sin_addr.s_addr = htonl(INADDR_ANY);
 #elif USE_IP_VER == 6
 	struct sockaddr_in6 inaddr;
-	const size_t inaddrlen = sizeof(inaddr);
 	const int family = AF_INET6;
 
 	inaddr.sin6_family = AF_INET6;
@@ -165,18 +108,18 @@ int main(int argc, char **argv) {
 
 	host = socket(family, SOCK_STREAM, IPPROTO_TCP);
 	if (host == -1) {
-		HTTPD_ERROR("socket() failure: %s\n", strerror(errno));
+		httpd_error("socket() failure: %s", strerror(errno));
 		return -errno;
 	}
 
-	if (-1 == bind(host, (struct sockaddr *) &inaddr, inaddrlen)) {
-		HTTPD_ERROR("bind() failure: %s\n", strerror(errno));
+	if (-1 == bind(host, (struct sockaddr *) &inaddr, sizeof(inaddr))) {
+		httpd_error("bind() failure: %s", strerror(errno));
 		close(host);
 		return -errno;
 	}
 
 	if (-1 == listen(host, 3)) {
-		HTTPD_ERROR("listen() failure: %s\n", strerror(errno));
+		httpd_error("listen() failure: %s", strerror(errno));
 		close(host);
 		return -errno;
 	}
@@ -184,16 +127,16 @@ int main(int argc, char **argv) {
 	while (1) {
 		struct client_info ci;
 
-		ci.ci_addrlen = inaddrlen;
+		ci.ci_addrlen = sizeof(inaddr);
 		ci.ci_sock = accept(host, &ci.ci_addr, &ci.ci_addrlen);
 		if (ci.ci_sock == -1) {
 			if (errno != EINTR) {
-				HTTPD_ERROR("accept() failure: %s\n", strerror(errno));
+				httpd_error("accept() failure: %s", strerror(errno));
 				usleep(100000);
 			}
 			continue;
 		}
-		assert(ci.ci_addrlen == inaddrlen);
+		assert(ci.ci_addrlen == sizeof(inaddr));
 		ci.ci_basedir = basedir;
 
 		if (USE_PARALLEL_CGI) {

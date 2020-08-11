@@ -13,7 +13,6 @@
 
 typedef uint32_t __ipl_t;
 
-
 static inline void ipl_init(void) {
 	__asm__ __volatile__ (
 		"cpsie i \n\t");

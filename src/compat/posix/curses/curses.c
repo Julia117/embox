@@ -12,6 +12,7 @@
 #include <string.h>
 #include <termios.h>
 #include <stdio.h>
+#include <inttypes.h>
 
 #include <util/math.h>
 #include <util/array.h>
@@ -108,7 +109,7 @@ static SCREEN * newterm(char *type, FILE *outfile, FILE *infile) {
 	screen.out = outfile;
 	screen.in = infile;
 	window_init(&screen.std_win, 0, 0, LINES, COLS, NULL, &screen.std_buff[0][0]);
-	memset(&screen.std_buff[0][0], ' ', sizeof screen.std_buff);
+	memset(&screen.std_buff[0][0], 0, sizeof screen.std_buff);
 	window_init(&screen.cur_win, 0, 0, LINES, COLS, NULL, &screen.cur_buff[0][0]);
 	memset(&screen.cur_buff[0][0], 0, sizeof screen.cur_buff);
 	screen.curses_mode = true;
@@ -216,7 +217,8 @@ int delwin(WINDOW *win) {
 int doupdate(void) {
 	chtype *std_ptr, *cur_ptr, *std_end;
 	ptrdiff_t offset;
-	uint16_t y, x;
+	uint16_t x;
+	/* uint16_t y */
 
 	if (isendwin()) {
 		if (0 != screen_change_mode()) {
@@ -233,10 +235,10 @@ int doupdate(void) {
 				++std_ptr, ++cur_ptr) { }
 
 		offset = std_ptr - stdscr->lines;
-		y = offset / COLS;
+		/* y = offset / COLS; */
 		x = offset % COLS;
 
-		fprintf(screen.out, "\x1b[%hu;%huH", y + 1, x + 1);
+		/* fprintf(screen.out, "\x1b[%" PRIu16 ";%" PRIu16 "H", y + 1, x + 1); TODO cursor position */
 
 		for (; (std_ptr < std_end) && (*std_ptr != *cur_ptr);
 				++std_ptr, ++cur_ptr) {
@@ -298,7 +300,7 @@ int endwin(void) {
 		return ERR;
 	}
 
-	fprintf(screen.out, "\x1b[1;1H");
+	/* fprintf(screen.out, "\x1b[1;1H"); TODO cursor position  */
 	for (y = 0; y < LINES; ++y) {
 		for (x = 0; x < COLS; ++x) {
 			window_setch(curscr, ' ', y, x);
@@ -306,7 +308,7 @@ int endwin(void) {
 		}
 	}
 
-	fprintf(screen.out, "\x1b[1;1H");
+	/* fprintf(screen.out, "\x1b[1;1H"); TODO cursor position */
 
 	return OK;
 }
@@ -640,7 +642,7 @@ int mvwgetch(WINDOW *win, int y, int x) {
 int wgetch(WINDOW *win) {
 	int c;
 
-	fprintf(screen.out, "\x1b[%d;%dH", win->cury + 1, win->curx + 1); /* FIXME setup cursor*/
+	/* fprintf(screen.out, "\x1b[%d;%dH", win->cury + 1, win->curx + 1);  FIXME setup cursor*/
 
 	c = fgetc(screen.in);
 	if (c == '\n') {

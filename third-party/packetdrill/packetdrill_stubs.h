@@ -60,16 +60,9 @@ struct sockaddr_dl {
 
 struct iovec;
 
-extern int asprintf(char **strp, const char *fmt, ...);
-
 static inline char *strsignal(int sig) {
 	PD_STUB_USE();
 	return "i-know-but-won't-tell-you-signal";
-}
-
-static inline int if_nametoindex(const char *name) {
-	PD_STUB_USE();
-	return 1;
 }
 
 static inline int mlockall(int flags) {
@@ -88,15 +81,6 @@ static inline FILE *fropen(void *cookie, int (*readfn)(void *, char *, int)) {
 }
 
 #include <sys/types.h>
-static inline ssize_t readv(int fildes, const struct iovec *iov, int iovcnt) {
-	PD_STUB_USE();
-	return -1;
-}
-
-static inline ssize_t writev(int fildes, const struct iovec *iov, int iovcnt) {
-	PD_STUB_USE();
-	return -1;
-}
 
 #endif /* PACKETDRILL_STUBS_H_ */
 

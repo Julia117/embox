@@ -1,12 +1,21 @@
 package embox.driver
 
-module block {
-	source "block_dev.c", "block_dev_namer.c"
-	option number dev_quantity = 16
+module block_dev {
+	source "block_dev_idesc.c"
 
-	depends embox.util.LibUtil
-	depends embox.util.indexator
+	@IncludeExport(path="drivers")
+	source "block_dev.h"
+
+	option number dev_quantity = 8
+	option number default_block_size = 512
+	source "block_dev.c"
+	source "block_dev_namer.c"
+
+	depends embox.compat.posix.fs.libgen
 	depends embox.mem.phymem
 	depends embox.fs.buffer_cache
 	depends embox.fs.buffer_crypt_api
+	depends embox.mem.phymem
+	depends embox.mem.heap_place
+	depends embox.driver.common
 }

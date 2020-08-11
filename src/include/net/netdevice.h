@@ -9,16 +9,12 @@
 #ifndef NET_NETDEVICE_H_
 #define NET_NETDEVICE_H_
 
-//#include <util/array.h>
 #include <assert.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <net/if.h>
-//#include <arpa/inet.h>
-
 #include <net/skbuff.h>
 #include <util/dlist.h>
-
-//#include <util/hashtable.h>
 
 /**
  * Prototypes
@@ -75,6 +71,10 @@ typedef struct net_driver {
 	int (*stop)(struct net_device *dev);
 	int (*xmit)(struct net_device *dev, struct sk_buff *skb);
 	int (*set_macaddr)(struct net_device *dev, const void *addr);
+	int (*mdio_read)(struct net_device *dev, uint8_t reg);
+	int (*mdio_write)(struct net_device *dev, uint8_t reg, uint16_t data);
+	void (*set_phyid)(struct net_device *dev, uint8_t phyid);
+	int (*set_speed)(struct net_device *dev, int speed);
 } net_driver_t;
 
 
@@ -100,8 +100,6 @@ struct net_header_info {
 typedef struct net_device_ops {
 	int (*build_hdr)(struct sk_buff *skb,
 			const struct net_header_info *hdr_info);
-	int (*parse_hdr)(struct sk_buff *skb,
-			struct net_header_info *out_hdr_info);
 	int (*check_addr)(const void *addr);
 	int (*check_mtu)(int mtu);
 } net_device_ops_t;
@@ -110,7 +108,6 @@ typedef struct net_device_ops {
  * structure of net device
  */
 typedef struct net_device {
-	struct dlist_head rx_lnk;
 	int index;
 	char name[IFNAMSIZ]; /**< Name of the interface.  */
 	unsigned char dev_addr[MAX_ADDR_LEN]; /**< hw address              */
@@ -120,12 +117,15 @@ typedef struct net_device {
 	unsigned char addr_len; /**< hardware address length      */
 	unsigned int flags; /**< interface flags (a la BSD)   */
 	unsigned int mtu; /**< interface MTU value          */
-	unsigned long base_addr; /**< device I/O address           */
+	uintptr_t base_addr; /**< device I/O address           */
 	unsigned int irq; /**< device IRQ number            */
 	struct net_device_stats stats;
 	const struct net_device_ops *ops; /**< Hardware description  */
 	const struct net_driver *drv_ops; /**< Management operations        */
-	struct sk_buff_head dev_queue;
+	struct dlist_head rx_lnk;         /* for netif_rx list */
+	struct dlist_head tx_lnk;         /* for netif_tx list */
+	struct sk_buff_head dev_queue;    /* rx skb queue */
+	struct sk_buff_head dev_queue_tx; /* tx skb queue */
 	struct net_node *pnet_node;
 	void *priv; /**< private data */
 } net_device_t;
@@ -133,11 +133,11 @@ typedef struct net_device {
 /**
  * Get data private data casted to type
  */
-#define netdev_priv(dev, type) \
+#define netdev_priv(dev) \
 	({                                        \
 		const struct net_device *__dev = dev; \
 		assert(__dev != NULL);                \
-		(type *)__dev->priv;                  \
+		__dev->priv;                         \
 	})
 
 /**

@@ -1,4 +1,3 @@
-/*FIXME mybuild wrong packet name */
 package embox.driver.interrupt
 
 abstract module irqctrl_api { }
@@ -16,36 +15,10 @@ module i8259 extends irqctrl_api {
 	source "i8259.c", "i8259.h"
 }
 
-module ioapic extends irqctrl_api {
-	source "ioapic.c", "ioapic.h"
+module raspi extends irqctrl_api {
+	source "raspi.c", "raspi.h"
 
-	depends lapic
-}
-
-/* TODO: lapic doesn't depend on ioapic, only in current realization */
-module lapic {
-	source "lapic.c", "lapic.h"
-
-	//@NoRuntime
-	//depends ioapic
-}
-
-module irqmp extends irqctrl_api {
-	source "irqmp.c", "irqmp.h"
-
-	depends embox.driver.ambapp_api
-	option number irqmp_base=0x80000200
-}
-
-module mb_intc extends irqctrl_api {
-	source "mb_intc.c", "mb_intc.h"
-
-	option number mbintc_base
-}
-
-module cortexm_nvic extends irqctrl_api {
-	option number irq_table_size = 16
-	source "cortexm_nvic.c", "cortexm_nvic.h"
+	depends embox.util.Bit
 }
 
 @BuildDepends(embox.arch.arm.cmsis)
@@ -54,12 +27,8 @@ module cmsis_nvic extends irqctrl_api {
 	source "cmsis_nvic.c", "cmsis_nvic.h"
 }
 
-module mips_intc extends irqctrl_api {
-	source "mips_intc.c", "mips_intc.h"
-}
-
-module omap3_intc extends irqctrl_api {
-	source "omap3_intc.c", "omap3_intc.h"
+module bpi_intc extends irqctrl_api {
+	source "bpi_intc.c", "bpi_intc.h"
 }
 
 module ppc_intc extends irqctrl_api {
@@ -78,4 +47,11 @@ module msp430sfr extends irqctrl_api {
 
 module no_interrupts extends irqctrl_api {
 	source "no_interrupts.h"
+	source "no_interrupts.c"
+}
+
+module xen extends irqctrl_api {
+	source "xen.h"
+	source "xen.c"
+	depends embox.arch.xen.traps
 }

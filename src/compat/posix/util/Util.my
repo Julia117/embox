@@ -9,23 +9,25 @@ module All {
 		utsname,
 		getpass,
 		gethostname,
-		environ
+		environ,
+		swab
 }
 
 static module getopt {
+	@IncludeExport(path="util")
+	source "getopt.h"
 	source "getopt.c"
 	source "getopt_long.c"
 
-	depends embox.compat.libc.str
+	@NoRuntime depends embox.compat.libc.str
 }
 
 static module utsname {
-	option string release="0.3.3"
 	option string system="Embox"
-	option string hostname="embox"
+	option string hostname="localhost"
 	source "utsname.c"
 
-	depends embox.compat.libc.str
+	@NoRuntime depends embox.compat.libc.str
 }
 
 static module time {
@@ -43,6 +45,8 @@ static module times {
 }
 
 static module sleep {
+	option number log_level=0
+
 	source "sleep.c"
 	source "nanosleep.c"
 
@@ -75,4 +79,8 @@ static module environ {
 	depends embox.kernel.task.resource.errno
 	@NoRuntime depends embox.compat.libc.assert
 	@NoRuntime depends embox.compat.libc.str
+}
+
+static module swab {
+	source "swab.c"
 }

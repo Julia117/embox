@@ -11,9 +11,13 @@
 #ifndef COMPAT_POSIX_UNISTD_H_
 #define COMPAT_POSIX_UNISTD_H_
 
+#include <compiler.h>
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/cdefs.h>
+
+#include <sys/uio.h>
 
 #include <posix_environ.h>
 
@@ -23,9 +27,12 @@
 #define _SC_PAGESIZE          1
 #define _SC_PAGE_SIZE         _SC_PAGESIZE
 #define _SC_CLK_TCK           2
+#define _SC_GETPW_R_SIZE_MAX  3
+#define _SC_ATEXIT_MAX        4
 /*not posix */
-#define _SC_NPROCESSORS_ONLN  3
+#define _SC_NPROCESSORS_ONLN  103
 #define _SC_NPROCESSORS_CONF  _SC_NPROCESSORS_ONLN
+#define _SC_PHYS_PAGES        104
 
 /*
 _SC_2_C_BIND
@@ -42,7 +49,6 @@ _SC_AIO_LISTIO_MAX
 _SC_AIO_MAX
 _SC_AIO_PRIO_DELTA_MAX
 _SC_ASYNCHRONOUS_IO
-_SC_ATEXIT_MAX
 _SC_BC_BASE_MAX
 _SC_BC_DIM_MAX
 _SC_BC_SCALE_MAX
@@ -148,6 +154,10 @@ extern ssize_t write(int fd, const void *buf, size_t nbyte);
 
 extern ssize_t read(int fd, void *buf, size_t nbyte);
 
+extern ssize_t writev(int fd, const struct iovec *iov, int iovcnt);
+
+extern ssize_t readv(int fd, const struct iovec *iov, int iovcnt);
+
 extern off_t lseek(int fd, off_t offset, int origin);
 
 extern int close(int fd);
@@ -182,7 +192,7 @@ extern int dup2(int flides, int flides2);
 extern int pipe(int pipefd[2]);
 extern int pipe2(int pipefd[2], int flags);
 
-extern void _exit (int status) __attribute__ ((__noreturn__));
+extern void _NORETURN _exit (int status);
 
 extern uid_t getuid(void);
 extern uid_t geteuid(void);
@@ -198,6 +208,23 @@ extern int setregid(gid_t rgid, gid_t egid);
 extern int setgid(gid_t gid);
 extern int setegid(gid_t gid);
 
+/**
+ * @brief Change length of regular file
+ *
+ * @param path Path of the regular file
+ * @param length New length
+ *
+ * @return Negative error code or 0 if succeed
+ *
+ * @note Currently unsupported errors:
+ *    EACCESS
+ *    EFAULT
+ *    EINTR
+ *    EIO
+ *    ENAMETOOLONG
+ *    ENOTDIR
+ *    EROFS
+ **/
 extern int truncate(const char *path, off_t length);
 extern int ftruncate(int fd, off_t length);
 
@@ -217,7 +244,14 @@ static inline int access(const char *path, int amode) {
 	return 0;
 }
 
-#include <getopt.h>
+extern void swab(const void *bfrom, void *bto, ssize_t n);
+
+extern int getopt(int argc, char *const argv[], const char *opts);
+
+extern char *optarg; /**< argument to optopt */
+extern int optind;   /**< last touched cmdline argument */
+extern int optopt;   /**< last returned option */
+extern int opterr;   /**< flag:error message on unrecognzed options */
 
 #ifndef environ
 /**
@@ -231,6 +265,18 @@ extern char **environ;
 extern char *getpass(const char *prompt);
 
 extern int gethostname(char *name, size_t len);
+
+extern int chown(const char *path, uid_t owner, gid_t group);
+
+
+/*******************************************
+ * stubs
+ *******************************************/
+static inline void sync(void) {
+}
+
+
+extern unsigned alarm(unsigned seconds);
 
 __END_DECLS
 

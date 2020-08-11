@@ -9,14 +9,14 @@
 #include <assert.h>
 #include <errno.h>
 #include <poll.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include <fs/index_descriptor.h>
 #include <fs/idesc.h>
-#include <fs/flags.h>
-
-#include <kernel/task.h>
-
 #include <fs/poll_table.h>
+
+#include <kernel/task/resource/idesc_table.h>
 
 static int table_prepare(struct idesc_poll_table *pt, struct pollfd fds[],
 		nfds_t nfds) {
@@ -43,11 +43,11 @@ static int table_prepare(struct idesc_poll_table *pt, struct pollfd fds[],
 
 		poll_mask = 0;
 
-		if ((fds[i].events & POLLIN) && (idesc->idesc_amode & FS_MAY_READ)) {
+		if ((fds[i].events & POLLIN) && ((idesc->idesc_flags & O_ACCESS_MASK) != O_WRONLY)) {
 			poll_mask |= POLLIN;
 		}
 
-		if ((fds[i].events & POLLOUT) && (idesc->idesc_amode & FS_MAY_WRITE)) {
+		if ((fds[i].events & POLLOUT) && ((idesc->idesc_flags & O_ACCESS_MASK) != O_RDONLY)) {
 			poll_mask |= POLLOUT;
 		}
 

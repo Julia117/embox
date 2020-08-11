@@ -36,7 +36,7 @@ static const struct cgi_env_descr cgi_env[] = {
 static int httpd_execve(const char *path, char *const argv[], char *const envp[]) {
 	for (int i_ce = 0; envp[i_ce]; i_ce++) {
 		if (putenv(envp[i_ce])) {
-			HTTPD_ERROR("putenv failed\n");
+			httpd_error("putenv failed");
 			exit(1);
 		}
 	}
@@ -66,7 +66,7 @@ static int httpd_fill_env(const struct http_req *hreq, char *envp[], int envp_le
 
 		printed = snprintf(ebp, env_sz, "%s=%s", ce_d->name, val);
 		if (env_sz <= printed) {
-			HTTPD_ERROR("have no space to write environment\n");
+			httpd_error("have no space to write environment");
 			exit(1);
 		}
 		envp[n_ce++] = ebp;
@@ -80,14 +80,14 @@ static int httpd_fill_env(const struct http_req *hreq, char *envp[], int envp_le
 	return n_ce;
 }
 
-static pid_t httpd_response_cgi(const struct client_info *cinfo, const struct http_req *hreq, 
+static pid_t httpd_response_cgi(const struct client_info *cinfo, const struct http_req *hreq,
 		char *path) {
 	pid_t pid;
 
 	pid = vfork();
 	if (pid < 0) {
 		int err = errno;
-		HTTPD_ERROR("vfork() error(%d): %s\n", err, strerror(err));
+		httpd_error("vfork() error(%d): %s", err, strerror(err));
 		return -err;
 	}
 

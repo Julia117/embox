@@ -15,14 +15,6 @@
 
 #include <stdio.h>
 
-#undef TRACE_FS
-
-#ifdef TRACE_FS
-#define DPRINTF(a)	printf a
-#else
-#define DPRINTF(a)	do {} while (0)
-#endif
-
 __BEGIN_DECLS
 
 /* int open (const char *path, int __oflag);
@@ -57,6 +49,7 @@ extern int fcntl(int fd, int cmd, ...);
 #define F_DUPFD            12
 
 /* fcntl flags */
+#define O_ACCESS_MASK      (O_RDONLY|O_WRONLY|O_RDWR)
 #define O_RDONLY           0x0000  /* Open for reading only */
 #define O_WRONLY           0x0001  /* Open for writing only */
 #define O_RDWR             0x0002  /* Open for reading and writing */
@@ -78,12 +71,16 @@ extern int fcntl(int fd, int cmd, ...);
  * The result is unspecified if this flag is applied to a non-directory file.
  */
 #define O_SEARCH           0x4000
+#define O_PATH             O_SEARCH
 
 /* If path names a symbolic link, fail and set errno to [ELOOP] */
 #define O_NOFOLLOW         0x8000
 
 /* file descriptor flags */
-#define FD_CLOEXEC         0x0001
+#define FD_CLOEXEC         0x0010
+/* TODO not POSIX */
+#define O_CLOEXEC          FD_CLOEXEC
+
 
 struct flock {
 	short  l_type;   /* Type of lock; F_RDLCK, F_WRLCK, F_UNLCK. */

@@ -9,6 +9,10 @@
 #include <stdint.h>
 #include <hal/reg.h>
 
+#include <hal/mmu.h>
+#include <drivers/common/memory.h>
+#include <mem/vmem.h>
+
 #include <drivers/pci/pci_chip/pci_utils.h>
 
 #include <embox/unit.h>
@@ -296,3 +300,16 @@ static int ti81xx_pci_init(void) {
 
 	return 0;
 }
+
+/* NOTE: this may be inaccurate! */
+unsigned int pci_irq_number(struct pci_slot_dev *dev) {
+	return (unsigned int) dev->irq_line;
+}
+
+PERIPH_MEMORY_DEFINE(pci_chip, TI81_CM, 0x1000);
+
+PERIPH_MEMORY_DEFINE(pci_root, TI81_PRCM, 0x1000);
+
+PERIPH_MEMORY_DEFINE(pci_region0, TI81_PCI_REGION0, 0x4000);
+
+PERIPH_MEMORY_DEFINE(pci_region1, TI81_PCI_REGION1, 0x100000);

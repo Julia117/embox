@@ -2,7 +2,8 @@
 PKG_NAME := pcre
 PKG_VER  := 8.36
 
-PKG_SOURCES := http://netcologne.dl.sourceforge.net/project/$(PKG_NAME)/$(PKG_NAME)/$(PKG_VER)/$(PKG_NAME)-$(PKG_VER).tar.bz2
+PKG_SOURCES := http://netcologne.dl.sourceforge.net/project/$(PKG_NAME)/$(PKG_NAME)/$(PKG_VER)/$(PKG_NAME)-$(PKG_VER).tar.bz2 \
+	http://download.embox.rocks/$(PKG_NAME)-$(PKG_VER).tar.bz2
 PKG_MD5     := b767bc9af0c20bc9c1fe403b0d41ad97
 
 include $(EXTBLD_LIB)
@@ -22,13 +23,13 @@ $(CONFIGURE) :
 
 $(BUILD) :
 	cd $(PKG_SOURCE_DIR) && ( \
-		make MAKEFLAGS='$(EMBOX_IMPORTED_MAKEFLAGS)'; \
+		$(MAKE) MAKEFLAGS='$(EMBOX_IMPORTED_MAKEFLAGS)'; \
 	)
 	touch $@
 
 $(INSTALL) :
 	cd $(PKG_SOURCE_DIR) && ( \
-		make DESTDIR=$(PKG_INSTALL_DIR) install; \
+		$(MAKE) DESTDIR=$(PKG_INSTALL_DIR) install; \
 	)
 	cp $(PKG_INSTALL_DIR)/lib/libpcre*.a $(PKG_INSTALL_DIR)
 

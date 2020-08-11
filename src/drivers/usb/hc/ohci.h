@@ -45,17 +45,20 @@
 
 #define OHCI_RH_DESC_A_N_DOWNP_M      0x000000ff
 
-#define OHCI_RH_PORT_CONN             0x0001
-#define OHCI_RH_PORT_ENABLE           0x0002
-#define OHCI_RH_PORT_SUSP             0x0004
-#define OHCI_RH_PORT_OVERRUN          0x0008
-#define OHCI_RH_PORT_RESET            0x0010
-#define OHCI_RH_PORT_POWERST          0x0100
-#define OHCI_RH_PORT_LOWSPD           0x0200
+#define OHCI_RH_R_CONN_W_CLREN        0x0001
+#define OHCI_RH_R_EN_W_STEN           0x0002
+#define OHCI_RH_R_SUSP_W_STSUSP       0x0004
+#define OHCI_RH_R_OVERC_W_CLSUSP      0x0008
+#define OHCI_RH_R_RST_W_STRST         0x0010
+#define OHCI_RH_R_PWR_W_STPWR         0x0100
+#define OHCI_RH_R_LOWSPD_W_CLPWR      0x0200
+
+#define OHCI_RH_PS_CSC   (1 << 16)   /* connect status change */
 
 #define OHCI_TD_SETUP                 0x00000000
 #define OHCI_TD_OUT                   0x00080000
 #define OHCI_TD_IN                    0x00100000
+#define OHCI_TD_BUF_ROUND             0x00040000
 #define OHCI_TD_FLAGS_CC_MASK         0xf0000000
 #define OHCI_TD_CC_NOERR              0x00000000
 #define OHCI_TD_CC_STALL              0x40000000
@@ -120,13 +123,12 @@ struct ohci_reg {
 	uint32_t hc_rh_desc_b;
 	uint32_t hc_rh_stat;
 	uint32_t hc_rh_port_stat[];
-} __attribute__((packed));
+} __attribute__((packed,aligned(sizeof(uint32_t))));
 
 struct ohci_hcd {
 	struct usb_hcd *hcd;
 	struct ohci_hcca *hcca;
 	struct ohci_reg *base;
-
 };
 
 static inline struct usb_hcd *ohci2hcd(struct ohci_hcd *ohcd) {
@@ -142,6 +144,9 @@ struct ohci_ed {
 	uint32_t tail_td;
 	uint32_t head_td;
 	uint32_t next_ed;
+
+	/* it's not hardware field, must be the last */
+	struct usb_queue req_queue;
 } __attribute__((packed,aligned(16)));
 
 
@@ -150,7 +155,7 @@ static inline struct ohci_ed *endp2ohci(struct usb_endp *endp) {
 }
 
 static inline struct usb_endp *ohci2endp(struct ohci_ed *ed) {
-	assert(0, "%s: NYI", __func__);
+	assertf(0, "%s: NYI", __func__);
 	return NULL;
 }
 

@@ -8,14 +8,14 @@
 
 #include <stdint.h>
 
-#include <drivers/gpio.h>
+#include <drivers/gpio/gpio.h>
 #include <hal/reg.h>
 #include <hal/system.h>
 #include <drivers/diag.h>
-#include <drivers/serial/diag.h>
+#include <drivers/serial/diag_serial.h>
 #include <embox/unit.h>
 
-#include <drivers/uart_device.h>
+#include <drivers/serial/uart_device.h>
 
 EMBOX_UNIT_INIT(stm32uart_mod_init);
 
@@ -45,7 +45,7 @@ struct uart_stm32 {
 
 #define UART0 (0x40013800)
 
-#define UART_GPIO GPIO_A
+#define UART_GPIO GPIO_PORT_A
 
 #define TX_PIN  (1 << 9)
 #define RX_PIN  (1 << 10)
@@ -55,9 +55,9 @@ struct uart_stm32 {
 #define USART_FLAG_RXNE (1 << 5)
 #define USART_FLAG_TXE (1 << 7)
 
-#define USART_FLAG_UE (1 << 13)
-#define USART_FLAG_RE (1 << 2)
-#define USART_FLAG_TE (1 << 3)
+#define USART_FLAG_UE (1 << 13)	/* USART enable		*/
+#define USART_FLAG_RE (1 << 2)	/* Receive enable	*/
+#define USART_FLAG_TE (1 << 3)	/* Transmit enable	*/
 
 #define RCC_APB2ENR_USART1EN (1 << 14)
 
@@ -91,9 +91,9 @@ static int stm32_uart_setup(struct uart *dev, const struct uart_params *params) 
 
 	REG_ORIN(RCC_APB2ENR,RCC_APB2ENR_USART1EN);
 
-	gpio_settings(UART_GPIO, TX_PIN ,
+	gpio_setup_mode(UART_GPIO, TX_PIN ,
 			GPIO_MODE_OUTPUT | GPIO_MODE_OUT_ALTERNATE);
-	gpio_settings(UART_GPIO, RX_PIN, GPIO_MODE_INPUT);
+	gpio_setup_mode(UART_GPIO, RX_PIN, GPIO_MODE_INPUT);
 
 	REG_STORE(&uart->brr, SYS_CLOCK / params->baud_rate);
 	REG_ORIN(&uart->cr1, USART_FLAG_RE | USART_FLAG_TE);
@@ -124,13 +124,7 @@ static const struct uart_params uart_defparams = {
 		.irq = false,
 };
 
-const struct uart_diag DIAG_IMPL_NAME(__EMBUILD_MOD__) = {
-		.diag = {
-			.ops = &uart_diag_ops,
-		},
-		.uart = &stm32_uart0,
-		.params = &uart_defparams,
-};
+DIAG_SERIAL_DEF(&stm32_uart0, &uart_defparams);
 
 static int stm32uart_mod_init(void) {
 	/*if (!uart_register(&stm32_uart0, &uart_defparams)) {*/

@@ -17,6 +17,7 @@
 #include <defines/size_t.h>
 #include <defines/wchar_t.h>
 #include <defines/null.h>
+#include <compiler.h>
 
 /* In addition, the following symbolic names and macros shall be defined as in
  * <sys/wait.h> , for use in decoding the return value from system():
@@ -68,14 +69,20 @@ __BEGIN_DECLS
  *   @a base.
  */
 extern long int strtol(const char *nptr, char **endptr, int base);
-
 extern unsigned long int strtoul(const char *nptr, char **endptr, int base);
-
-extern double strtod(const char *nptr, char **endptr);
-
-extern unsigned long long int strtoull(const char *nptr, char **endptr, int base);
-
 extern long long int strtoll(const char *nptr, char **endptr, int base);
+extern unsigned long long int strtoull(const char *nptr, char **endptr, int base);
+extern float strtof(const char *nptr, char **endptr);
+extern double strtod(const char *nptr, char **endptr);
+extern long double strtold(const char *nptr, char **endptr);
+
+extern double atof(const char *nptr);
+extern int atoi(const char *nptr);
+extern long atol(const char *nptr);
+static inline long long atoll(const char *nptr) {
+	return strtoll(nptr, 0, 10);
+}
+extern long long atoq(const char *nptr);
 
 /**
  * Convert integer to string.
@@ -145,17 +152,6 @@ extern int setstate_r(char *statebuf, struct random_data *buf);
 extern ldiv_t ldiv(long num, long denom);
 extern div_t div(int num, int denom);
 
-//FIXME atof atoi and so on
-extern double atof(const char *nptr);
-extern int atoi(const char *nptr);
-extern long atol(const char *nptr);
-static inline long long atoll(const char *nptr) {
-	return strtoll(nptr, 0, 10);
-}
-extern long long atoq(const char *nptr);
-extern double strtod(const char *nptr, char **endptr);
-extern float strtof(const char *nptr, char **endptr);
-extern long double strtold(const char *nptr, char **endptr);
 extern void abort(void);
 
 /* Integer expression whose value is the maximum number of bytes in a character
@@ -166,8 +162,15 @@ extern void abort(void);
 
 #define EXIT_FAILURE 1
 #define EXIT_SUCCESS 0
-extern void exit(int status) __attribute__ ((__noreturn__));
+extern void _NORETURN exit(int status);
 
+#ifdef __GNUC__
+#if __GNUC__ > 4 || (__GNUC__ == 4 && (__GNUC_MINOR__ > 5 ))
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+#endif /* __GNUC__ > 4 || (__GNUC__ == 4 && (__GNUC_MINOR__ > 5 )) */
+#endif /*__GNUC__ */
 /**
  * Returns the absolute value of an argument. If the argument is not negative,
  * the argument is returned. If the argument is negative, the negation of the
@@ -177,9 +180,15 @@ extern void exit(int status) __attribute__ ((__noreturn__));
  *
  * @return the absolute value of the argument
  */
-static inline int abs(int x) { return x < 0 ? -x : x; } // TODO move from here
+static inline int abs(int x) { return x < 0 ? -x : x; }
 static inline long labs(long x) { return x < 0 ? -x : x; }
+#ifdef __GNUC__
+#if __GNUC__ > 4 || (__GNUC__ == 4 && (__GNUC_MINOR__ > 5 ))
 
+#pragma GCC diagnostic pop
+
+#endif /* __GNUC__ > 4 || (__GNUC__ == 4 && (__GNUC_MINOR__ > 5 )) */
+#endif /*__GNUC__ */
 
 extern char * getenv(const char *name);
 extern int putenv(char *string);
@@ -188,19 +197,17 @@ extern int unsetenv(const char *name);
 extern int clearenv(void);
 extern int system(const char *command);
 
-static inline int mkstemp(char *path_template) {
-	(void)path_template;
-	return -1;
-}
-static inline int mbtowc(wchar_t *pwc, const char *s, size_t n) {
-	(void)pwc; (void)s; (void)n;
-	return 0;
-}
-static inline int wctomb(char *s, wchar_t wchar) {
-	(void)s;
-	(void)wchar;
-	return 0;
-}
+extern int mkstemp(char *path_template);
+
+extern int mbtowc(wchar_t *out, const char *in, size_t n);
+extern int wctomb(char *out, const wchar_t *in );
+
+extern int mblen(const char *str, size_t max);
+
+extern int atexit(void (*func)(void));
+
+extern size_t mbstowcs(wchar_t *wcstring, const char *mbstring, size_t n);
+extern size_t wcstombs(char *mbstr,  const wchar_t *wcstr, size_t max);
 
 __END_DECLS
 

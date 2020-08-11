@@ -137,6 +137,39 @@ extern int strcmp(const char *str1, const char *str2);
  */
 extern int strncmp(const char *str1, const char *str2, size_t n);
 
+/** 
+ * Compare two strings using C locale.
+ * @param s1
+ *   The first string.
+ * @param s2
+ *   The second string.
+ * @return
+ *   Comparison result using LC_COLLATE=C.
+ * @retval 0
+ *   If the strings are equal.
+ * @retval positive
+ *   If @a s1 is greater than @a s2.
+ * @retval negative
+ *   If @a s1 is less than @a s2.
+ * Throw assert if character is not ASCII.
+ */
+extern int strcoll(const char *s1, const char *s2);
+
+/**
+ * Copy no more than n symbols from src to dest in such way that
+ * strcmp with modified strings works in the same way as strcoll.
+ * @param dest
+ *   Destination string.
+ * @param s2
+ *   Source string.
+ * @return
+ *   Number of bytes required to store the transformed string in
+ *   dest excluding the terminating null byte ('\0').
+ * @retval 0
+ * Throw assert if character is not ASCII.
+ */
+extern size_t strxfrm(char *dest, const char *src, size_t n);
+
 /**
  * Finds the first occurrence of the character @a ch (converted to a @c char)
  * in the given null-terminated string.
@@ -226,6 +259,30 @@ extern char *strcasestr(const char *haystack, const char *needle);
  *   C-style string, containing a descriptive error message
  */
 extern char *strerror(int err);
+
+/**
+ * Copies no more than @a n bytes from memory area @a src
+ * to memory area @a dest,
+ * stopping when the character @a c is found.
+ * 
+ * @param dest
+ *  Destination buffer
+ * @param src
+ *  The object in memory being copied
+ * @param n
+ *  The number of bytes to copy
+ * @param c
+ *  Character to stop copying when found.
+ * @return
+ *  Pointer to the destination buffer.
+ * 
+ * @note
+ *  If the memory areas overlap, the results are undefined.
+ * @see memcpy()
+ *  It does the same thing, but it doesn't stop at c.
+ */
+extern void* memccpy(void* dest, const void* src, int c, size_t n);
+
 
 /**
  * Copies @a n bytes from @a src to @a dst which must be two non-overlapping
@@ -479,71 +536,6 @@ extern size_t strnlen(const char *s, size_t maxlen);
  * Otherwise, it shall return a null pointer and set errno to indicate the error.
  */
 extern char *strndup(const char *s, size_t size);
-
-#if 0 /* NOT IMPLEMENTED */
-/**
- * The memccpy() function copies bytes from memory area s2 into s1, stopping
- * after the first occurrence of byte c (converted to an unsigned char) is
- * copied, or after n bytes are copied, whichever comes first. If copying takes
- * place between objects that overlap, the behaviour is undefined.
- *
- * @param s1
- * @param s2
- * @param c
- * @param n
- *
- * @return The memccpy() function returns a pointer to the byte after the copy
- * of c in s1, or a null pointer if c was not found in the first n bytes of s2.
- */
-extern void *memccpy(void *s1, const void *s2, int c, size_t n);
-/**
- * The strcoll() function compares the string pointed to by s1 to the string
- * pointed to by s2, both interpreted as appropriate to the LC_COLLATE category
- * of the current locale.
- * The strcoll() function will not change the setting of errno if successful.
- * Because no return value is reserved to indicate an error, an application
- * wishing to check for error situations should set errno to 0, then call
- * strcoll(), then check errno.
- *
- * @param s1
- * @param s2
- *
- * @return Upon successful completion, strcoll() returns an integer greater
- * than, equal to or less than 0, according to whether the string pointed to by
- * s1 is greater than, equal to or less than the string pointed to by s2 when
- * both are interpreted as appropriate to the current locale. On error,
- * strcoll() may set errno, but no return value is reserved to indicate an
- * error.
- */
-extern int strcoll(const char *s1, const char *s2);
-
-/**
- * The strxfrm() function transforms the string pointed to by s2 and places the
- * resulting string into the array pointed to by s1. The transformation is such
- * that if strcmp() is applied to two transformed strings, it returns a value
- * greater than, equal to or less than 0, corresponding to the result of
- * strcoll() applied to the same two original strings. No more than n bytes are
- * placed into the resulting array pointed to by s1, including the terminating
- * null byte. If n is 0, s1 is permitted to be a null pointer. If copying takes
- * place between objects that overlap, the behaviour is undefined.
- * The strxfrm() function will not change the setting of errno if successful.
- * Because no return value is reserved to indicate an error, an application
- * wishing to check for error situations should set errno to 0, then call
- * strcoll(), then check errno.
- *
- * @param s1
- * @param s2
- * @param n
- * @return Upon successful completion, strxfrm() returns the length of the
- * transformed string (not including the terminating null byte). If the value
- * returned is n or more, the contents of the array pointed to by s1 are
- * indeterminate.
- * On error, strxfrm() may set errno but no return value is reserved to
- * indicate an error.
- */
-extern size_t strxfrm(char *s1, const char *s2, size_t n);
-
-#endif
 
 #include <string_bsd.h>
 

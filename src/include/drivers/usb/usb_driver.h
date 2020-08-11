@@ -12,31 +12,30 @@
 #include <util/dlist.h>
 
 struct usb_dev;
+struct usb_hcd;
 struct usb_driver;
-struct kfile_operations;
-struct usb_dev_desc;
-struct node;
+struct file_operations;
+struct inode;
+struct usb_interface;
 
 struct usb_device_id {
+	unsigned short dev_class;
 	unsigned short vid;
 	unsigned short pid;
 };
 
 struct usb_driver {
-	int (*probe)(struct usb_driver *drv, struct usb_dev *dev, void **data);
-	void (*disconnect)(struct usb_dev *dev, void *data);
-	const struct kfile_operations *file_ops;
+	const char *name;
+	int (*probe)(struct usb_interface *dev);
+	void (*disconnect)(struct usb_interface *dev, void *data);
+	const struct file_operations *file_ops;
 	struct dlist_head drv_link;
 
 	struct usb_device_id *id_table;
 };
 
-extern void *usb_driver_data(struct usb_dev *dev);
-extern int usb_driver_open_by_node(struct node *n, struct usb_dev_desc **ddesc);
-
 extern int usb_driver_register(struct usb_driver *drv);
-
-extern void usb_driver_handle(struct usb_dev *dev);
-extern void usb_driver_release(struct usb_dev *dev);
+extern int usb_driver_probe(struct usb_interface *dev);
+extern int usb_driver_release(struct usb_interface *dev);
 
 #endif /* DRIVERS_USB_DRIVER_H_ */

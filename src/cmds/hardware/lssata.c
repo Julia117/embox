@@ -8,7 +8,7 @@
 
 #include <stdio.h>
 #include <unistd.h>
-#include <drivers/ahci.h>
+#include <drivers/ahci/ahci.h>
 
 struct lssata_cb {
 	int nhosts;
@@ -171,7 +171,6 @@ int main(int argc, char **argv) {
 	struct lssata_cb cookie;
 
 	if (argc > 1) {
-		getopt_init();
 		while (-1 != (opt = getopt(argc, argv, "xdh"))) {
 			switch (opt) {
 			case 'x':

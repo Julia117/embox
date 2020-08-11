@@ -6,6 +6,7 @@
  * @date    02.06.2014
  */
 
+#include <stdlib.h>
 #include <string.h>
 #include <framework/cmd/api.h>
 #include <cmd/shell.h>
@@ -16,6 +17,8 @@
 #include <kernel/task/resource/task_argv.h>
 #include <kernel/task/resource.h>
 #include <hal/vfork.h>
+
+#include <errno.h>
 
 static const char * exec_cmd_name(const char *path) {
 	size_t path_len;
@@ -60,7 +63,8 @@ int exec_call(void) {
 			task_self_module_ptr_set(cmd2mod(cmd));
 			ecode = cmd_exec(cmd, c, v);
 		} else {
-			ecode = ENOENT;
+			ecode = -ENOENT;
+			errno = ENOENT;
 		}
 	}
 
@@ -69,20 +73,84 @@ int exec_call(void) {
 
 int execv(const char *path, char *const argv[]) {
 	struct task *task;
+	int i;
+	size_t len;
+	char cmd_name[MAX_TASK_NAME_LEN];
+
 	/* save starting arguments for the task */
 	task = task_self();
 	task_resource_exec(task, path, argv);
+
+	cmd_name[0] = '\0';
+
+	if (argv != NULL) {
+		for (i = 0; argv[i] != NULL; i ++) {
+			len = strlen(cmd_name);
+			if (MAX_TASK_NAME_LEN - len - 1 <= 0) {
+				break;
+			}
+			strncat(cmd_name, argv[i], MAX_TASK_NAME_LEN - len - 1);
+			if (argv[i + 1] == NULL) {
+				break;
+			}
+
+			/* this code is required the only if argv is not NULL terminated */
+			if (i >= 3){
+				// TODO for protection from a lot of arguments
+				break;
+			}
+
+			len = strlen(cmd_name);
+			if (MAX_TASK_NAME_LEN - len - 1 <= 0) {
+				break;
+			}
+			strncat(cmd_name, " ", MAX_TASK_NAME_LEN - len - 1);
+		}
+	} else {
+		strncpy(cmd_name, path, MAX_TASK_NAME_LEN - 1);
+		cmd_name[MAX_TASK_NAME_LEN - 1] = '\0';
+	}
+
+	task_set_name(task, cmd_name);
 
 	/* If vforked then unblock parent and start execute new image */
 	vfork_child_done(task, task_exec_callback, NULL);
 
 	/* Not vforked */
-	exec_call();
+	int ecode = exec_call();
+
+	if (ecode == 0) {
+		task_exit(0);
+	}
+	return -1;
+
+}
+
+static int switch_env(char *const envp[]) {
+	int rc = 0;
+
+	if (!envp)
+		return 0;
+
+	clearenv();
+
+	while (*envp != NULL) {
+		rc = putenv(*envp);
+		if (rc != 0)
+			return rc;
+		envp++;
+	}
 
 	return 0;
 }
 
 int execve(const char *path, char *const argv[], char *const envp[]) {
+	int rc = 0;
+
+	rc = switch_env(envp);
+	if (rc != 0)
+		return rc;
+
 	return execv(path, argv);
 }
 

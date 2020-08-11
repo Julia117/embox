@@ -2,6 +2,8 @@ package embox.profiler
 
 @DefaultImpl(no_tracing)
 abstract module trace {
+	@IncludeExport(path="profiler/tracing")
+	source "trace.h"
 }
 
 module no_tracing extends trace {

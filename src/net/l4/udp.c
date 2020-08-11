@@ -9,6 +9,10 @@
  */
 
 #include <stdlib.h>
+#include <assert.h>
+#include <errno.h>
+#include <arpa/inet.h>
+
 #include <embox/net/proto.h>
 #include <net/l3/ipv4/ip.h>
 #include <net/l3/ipv6.h>
@@ -16,13 +20,10 @@
 #include <net/lib/udp.h>
 #include <net/l3/icmpv4.h>
 #include <net/l2/ethernet.h>
-#include <assert.h>
-#include <errno.h>
 #include <net/socket/inet_sock.h>
-#include <arpa/inet.h>
+
 #include <net/netdevice.h>
 #include <framework/mod/options.h>
-#include <framework/net/sock/api.h>
 
 #include <net/lib/ipv4.h>
 #include <net/lib/ipv6.h>
@@ -117,6 +118,8 @@ static int udp_err_tester(const struct sock *sk,
 	const struct inet_sock *in_sk;
 	const struct iphdr *emb_pack_iphdr;
 	const struct udphdr *emb_pack_udphdr;
+	struct icmphdr *icmph;
+	struct icmpbody_dest_unreach *dest_unreach;
 
 	in_sk = (const struct inet_sock *)sk;
 	assert(in_sk != NULL);
@@ -124,14 +127,11 @@ static int udp_err_tester(const struct sock *sk,
 	assert(in_sk->dst_in.sin_family == AF_INET);
 
 	assert(skb != NULL);
-	assert(skb->h.raw != NULL);
-	emb_pack_iphdr = (const struct iphdr *)(skb->h.raw
-			+ IP_HEADER_SIZE(skb->nh.iph) + ICMP_MIN_HEADER_SIZE);
 
-	assert(skb->nh.raw != NULL);
-	emb_pack_udphdr = (const struct udphdr *)(skb->h.raw
-			+ IP_HEADER_SIZE(skb->nh.iph) + ICMP_MIN_HEADER_SIZE
-			+ IP_HEADER_SIZE(emb_pack_iphdr));
+	icmph = icmp_hdr(skb);
+	dest_unreach = &(icmph->body.dest_unreach);
+	emb_pack_iphdr = (iphdr_t *)(dest_unreach->msg);
+	emb_pack_udphdr = (udphdr_t *)((unsigned char *)emb_pack_iphdr + IP_HEADER_SIZE(emb_pack_iphdr));
 
 	return (((in_sk->src_in.sin_addr.s_addr == skb->nh.iph->daddr)
 					&& (in_sk->src_in.sin_addr.s_addr == emb_pack_iphdr->saddr))

@@ -11,6 +11,7 @@
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <netinet/in.h>
 #include <stddef.h>
@@ -77,7 +78,7 @@ static int inet6_to_str(const struct in6_addr *in6, char *buff,
 	}
 
 	for (i = 0; i < zs_max_ind; ++i) {
-		ret = snprintf(buff, buff_sz, "%hx:", ntohs(in6->s6_addr16[i]));
+		ret = snprintf(buff, buff_sz, "%" PRIu16 ":", ntohs(in6->s6_addr16[i]));
 		if (ret < 0) {
 			return -EIO;
 		}
@@ -88,7 +89,7 @@ static int inet6_to_str(const struct in6_addr *in6, char *buff,
 		buff_sz -= ret;
 	}
 
-	ret = zs_max_len <= 1 ? snprintf(buff, buff_sz, "%hx", ntohs(in6->s6_addr16[i]))
+	ret = zs_max_len <= 1 ? snprintf(buff, buff_sz, "%" PRIu16, ntohs(in6->s6_addr16[i]))
 			: i + zs_max_len == ARRAY_SIZE(in6->s6_addr16) ? i == 0
 				? snprintf(buff, buff_sz, "::")
 				: snprintf(buff, buff_sz, ":")
@@ -105,7 +106,7 @@ static int inet6_to_str(const struct in6_addr *in6, char *buff,
 	i += zs_max_len <= 1 ? 1 : zs_max_len;
 
 	for (; i < ARRAY_SIZE(in6->s6_addr16); ++i) {
-		ret = snprintf(buff, buff_sz, ":%hx", ntohs(in6->s6_addr16[i]));
+		ret = snprintf(buff, buff_sz, ":%" PRIu16, ntohs(in6->s6_addr16[i]));
 		if (ret < 0) {
 			return -EIO;
 		}
@@ -273,4 +274,34 @@ int inet_pton(int af, const char *buff, void *addr) {
 	}
 
 	return ret == 0 ? 1 : 0;
+}
+
+#define	IN_CLASSA(a)		((((in_addr_t)(a)) & 0x80000000) == 0)
+#define	IN_CLASSA_NET		0xff000000
+#define	IN_CLASSA_NSHIFT	24
+#define	IN_CLASSA_HOST		(0xffffffff & ~IN_CLASSA_NET)
+#define	IN_CLASSA_MAX		128
+#define	IN_CLASSB(a)		((((in_addr_t)(a)) & 0xc0000000) == 0x80000000)
+#define	IN_CLASSB_NET		0xffff0000
+#define	IN_CLASSB_NSHIFT	16
+#define	IN_CLASSB_HOST		(0xffffffff & ~IN_CLASSB_NET)
+#define	IN_CLASSB_MAX		65536
+#define	IN_CLASSC(a)		((((in_addr_t)(a)) & 0xe0000000) == 0xc0000000)
+#define	IN_CLASSC_NET		0xffffff00
+#define	IN_CLASSC_NSHIFT	8
+#define	IN_CLASSC_HOST		(0xffffffff & ~IN_CLASSC_NET)
+
+struct in_addr inet_makeaddr(in_addr_t net, in_addr_t host) {
+	struct in_addr in;
+
+	if (net < 128)
+		in.s_addr = (net << IN_CLASSA_NSHIFT) | (host & IN_CLASSA_HOST);
+	else if (net < 65536)
+		in.s_addr = (net << IN_CLASSB_NSHIFT) | (host & IN_CLASSB_HOST);
+	else if (net < 16777216L)
+		in.s_addr = (net << IN_CLASSC_NSHIFT) | (host & IN_CLASSC_HOST);
+	else
+		in.s_addr = net | host;
+	in.s_addr = htonl(in.s_addr);
+	return in;
 }

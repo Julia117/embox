@@ -8,6 +8,7 @@
 
 #include <unistd.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <framework/cmd/api.h>
 
@@ -17,9 +18,9 @@ static void print_usage(void) {
 
 int main(int argc, char **argv) {
 	const struct cmd *cmd;
-	int opt;
+	int opt, tab = 10;
+	char fmt[20];
 
-	getopt_init();
 	while (-1 != (opt = getopt(argc, argv, "h"))) {
 		switch (opt) {
 		case '?':
@@ -31,9 +32,17 @@ int main(int argc, char **argv) {
 		}
 	}
 
+	cmd_foreach(cmd) {
+		if (strlen(cmd_name(cmd)) > tab) {
+			tab = strlen(cmd_name(cmd));
+		}
+	}
+
+	snprintf(fmt, sizeof(fmt), "%%%ds - %%s\n", tab + 1);
+
 	printf("Available commands: \n");
 	cmd_foreach(cmd) {
-		printf("%11s - %s\n", cmd_name(cmd), cmd_brief(cmd));
+		printf(fmt, cmd_name(cmd), cmd_brief(cmd));
 	}
 
 	return 0;

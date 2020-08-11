@@ -40,22 +40,34 @@ static DLIST_DEFINE(rt_entry_info_list);
 int rt_add_route(struct net_device *dev, in_addr_t dst,
 		in_addr_t mask, in_addr_t gw, int flags) {
 	struct rt_entry_info *rt_info;
+	bool flag = true;
 
 	if (dev == NULL) {
 		return -EINVAL;
 	}
 
-	rt_info = (struct rt_entry_info *)pool_alloc(&rt_entry_info_pool);
-	if (rt_info == NULL) {
-		return -ENOMEM;
+	dlist_foreach_entry(rt_info, &rt_entry_info_list, lnk) {
+		if ((rt_info->entry.rt_dst == dst) &&
+                ((rt_info->entry.rt_mask == mask) || (INADDR_ANY == mask)) &&
+    			((rt_info->entry.rt_gateway == gw) || (INADDR_ANY == gw)) &&
+    			((rt_info->entry.dev == dev) || (NULL == dev))) {
+			flag = false;
+			return 0;
+		}
 	}
-	rt_info->entry.dev = dev;
-	rt_info->entry.rt_dst = dst; /* We assume that host bits are zeroes here */
-	rt_info->entry.rt_mask = mask;
-	rt_info->entry.rt_gateway = gw;
-	rt_info->entry.rt_flags = RTF_UP | flags;
 
-	dlist_add_prev_entry(rt_info, &rt_entry_info_list, lnk);
+	if (flag) {
+		rt_info = (struct rt_entry_info *)pool_alloc(&rt_entry_info_pool);
+		if (rt_info == NULL) {
+			return -ENOMEM;
+		}
+		rt_info->entry.dev = dev;
+		rt_info->entry.rt_dst = dst; /* We assume that host bits are zeroes here */
+		rt_info->entry.rt_mask = mask;
+		rt_info->entry.rt_gateway = gw;
+		rt_info->entry.rt_flags = RTF_UP | flags;
+		dlist_add_prev_entry(rt_info, &rt_entry_info_list, lnk);
+	}
 
 	return 0;
 }
@@ -68,7 +80,7 @@ int rt_del_route(struct net_device *dev, in_addr_t dst,
 		if ((rt_info->entry.rt_dst == dst) &&
                 ((rt_info->entry.rt_mask == mask) || (INADDR_ANY == mask)) &&
     			((rt_info->entry.rt_gateway == gw) || (INADDR_ANY == gw)) &&
-    			((rt_info->entry.dev == dev) || (INADDR_ANY == dev))) {
+    			((rt_info->entry.dev == dev) || (NULL == dev))) {
 			dlist_del_init_entry(rt_info, lnk);
 			pool_free(&rt_entry_info_pool, rt_info);
 			return 0;
@@ -76,6 +88,21 @@ int rt_del_route(struct net_device *dev, in_addr_t dst,
 	}
 
 	return -ENOENT;
+}
+
+int rt_del_route_if(struct net_device *dev) {
+	struct rt_entry_info *rt_info;
+	int ret = 0;
+
+	dlist_foreach_entry(rt_info, &rt_entry_info_list, lnk) {
+		if (rt_info->entry.dev == dev) {
+			dlist_del_init_entry(rt_info, lnk);
+			pool_free(&rt_entry_info_pool, rt_info);
+			ret ++;
+		}
+	}
+
+	return ret ? 0 : -ENOENT;
 }
 
 /* svv: ToDo:
@@ -102,7 +129,7 @@ int ip_route(struct sk_buff *skb, struct net_device *wanna_dev,
 	}
 
 	/* if loopback set lo device */
-	if (ip_is_local(daddr, false, false)) {
+	if (ip_is_local(daddr, 0)) {
 		assert(inetdev_get_loopback_dev() != NULL);
 		skb->dev = inetdev_get_loopback_dev()->dev;
 		return 0;
@@ -139,8 +166,11 @@ int rt_fib_route_ip(in_addr_t dst_ip, in_addr_t *next_ip) {
 		return -ENETUNREACH;
 	}
 
-	*next_ip = rte->rt_gateway == INADDR_ANY ? dst_ip
-			: rte->rt_gateway;
+	if (rte->rt_gateway == INADDR_ANY) {
+		*next_ip = dst_ip;
+	} else {
+		*next_ip = rte->rt_gateway;
+	}
 
 	return 0;
 }
@@ -184,7 +214,7 @@ int rt_fib_out_dev(in_addr_t dst, const struct sock *sk,
 	}
 
 	/* if loopback set lo device */
-	if (ip_is_local(dst, false, false)) {
+	if (ip_is_local(dst, 0)) {
 		assert(inetdev_get_loopback_dev() != NULL);
 		*out_dev = inetdev_get_loopback_dev()->dev;
 		return 0;

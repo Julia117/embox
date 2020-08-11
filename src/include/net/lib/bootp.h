@@ -11,6 +11,8 @@
 #ifndef NET_LIB_BOOTP_H_
 #define NET_LIB_BOOTP_H_
 
+#include <stdint.h>
+
 #include <netinet/in.h>
 #include <linux/types.h>
 
@@ -26,16 +28,17 @@
 #define BOOTP_SERVER_PORT 67
 #define BOOTP_CLIENT_PORT 68
 
-/**
- * Magic code
- */
-extern const unsigned char dhcp_magic_cookie[4];
+#define DHCP_MSG_TYPE_DISCOVER   1
+#define DHCP_MSG_TYPE_OFFER      2
+#define DHCP_MSG_TYPE_REQUEST    3
+#define DHCP_MSG_TYPE_DECLINE    4
+#define DHCP_MSG_TYPE_ACK        5
 
-typedef struct bootphdr {
-	__u8 op;          /* message type */
-	__u8 htype;       /* hw_addr type */
-	__u8 hlen;        /* hw_addr length */
-	__u8 hops;        /* gateway hops */
+struct bootphdr {
+	uint8_t op;          /* message type */
+	uint8_t htype;       /* hw_addr type */
+	uint8_t hlen;        /* hw_addr length */
+	uint8_t hops;        /* gateway hops */
 	__be32 xid;       /* transaction ID */
 	__be16 secs;      /* seconds since boot began */
 	__be16 res;       /* reserved */
@@ -43,11 +46,11 @@ typedef struct bootphdr {
 	in_addr_t yiaddr; /* 'your' (client) IP address */
 	in_addr_t siaddr; /* server IP address */
 	in_addr_t giaddr; /* gateway IP address */
-	__u8 chaddr[16];  /* client hardware address */
-	__s8 sname[64];   /* server host name */
-	__s8 file[128];   /* boot file name */
-	__u8 vend[64];    /* optional vedor-specific data */
-} __attribute__((packed)) bootphdr_t;
+	uint8_t chaddr[16];  /* client hardware address */
+	int8_t sname[64];   /* server host name */
+	int8_t file[128];   /* boot file name */
+	uint8_t vend[64];    /* optional vedor-specific data */
+} __attribute__((packed));
 
 #define BOOTP_HEADER_SIZE sizeof(struct bootphdr)
 
@@ -59,8 +62,6 @@ typedef struct bootphdr {
 #define TAG_PAD                 ((unsigned char)   0)
 #define TAG_SUBNET_MASK         ((unsigned char)   1)
 #define TAG_GATEWAY             ((unsigned char)   3)
-#define TAG_DHCP_PARM_REQ_LIST  ((unsigned char)  55)
-#if 0
 #define TAG_TIME_OFFSET         ((unsigned char)   2)
 #define TAG_TIME_SERVER         ((unsigned char)   4)
 #define TAG_NAME_SERVER         ((unsigned char)   5)
@@ -113,6 +114,7 @@ typedef struct bootphdr {
 #define TAG_DHCP_OPTOVER        ((unsigned char)  52)
 #define TAG_DHCP_MESS_TYPE      ((unsigned char)  53)
 #define TAG_DHCP_SERVER_ID      ((unsigned char)  54)
+#define TAG_DHCP_PARM_REQ_LIST  ((unsigned char)  55)
 #define TAG_DHCP_TEXT_MESSAGE   ((unsigned char)  56)
 #define TAG_DHCP_MAX_MSGSZ      ((unsigned char)  57)
 #define TAG_DHCP_RENEWAL_TIME   ((unsigned char)  58)
@@ -120,11 +122,28 @@ typedef struct bootphdr {
 #define TAG_DHCP_CLASSID        ((unsigned char)  60)
 #define TAG_DHCP_CLIENTID       ((unsigned char)  61)
 #define TAG_FQDN                ((unsigned char)  81)
-#endif
 
-extern int bootp_build(struct bootphdr *bph, unsigned char opcode,
-		unsigned char hw_type, unsigned char hw_len,
-		unsigned char *hw_addr);
-extern int bootp_valid(struct bootphdr *bph, unsigned char opcode);
+struct dhcp_option {
+	uint8_t tag;
+	uint8_t len;
+	uint8_t *value;
+};
+
+extern int bootp_build_request(struct bootphdr *bph, uint8_t opcode,
+		uint8_t hw_type, uint8_t hw_len, uint8_t *hw_addr);
+
+extern int bootp_find_option(struct bootphdr *bph, struct dhcp_option *opt);
+
+extern int bootp_get_ip(struct bootphdr *bph, in_addr_t *ip);
+
+extern int bootp_get_nameserver(struct bootphdr *bph, in_addr_t *ip);
+
+extern int bootp_get_gateway(struct bootphdr *bph, in_addr_t *ip);
+
+extern int bootp_get_mask(struct bootphdr *bph, in_addr_t *ip);
+
+extern int bootp_build_offer(struct bootphdr *bph, uint32_t xid,  uint8_t msg_type,
+		uint8_t hw_type, uint8_t hw_len, uint8_t *hw_addr,
+		in_addr_t client_ip_addr, in_addr_t server_ip_addr);
 
 #endif /* NET_LIB_BOOTP_H_ */

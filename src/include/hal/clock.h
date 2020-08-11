@@ -32,10 +32,13 @@ extern void clock_init(void);
  */
 extern void clock_setup(useconds_t useconds);
 
-extern void clock_tick_handler(int irq_num, void *dev_id);
+extern void clock_tick_handler(void *dev_id);
 
 extern clock_t clock_sys_ticks(void);
 extern uint32_t clock_freq(void);
 extern clock_t clock_sys_sec(void);
+
+extern int time_before(clock_t now, clock_t before);
+extern int time_after(clock_t now, clock_t after);
 
 #endif /* HAL_CLOCK_H_ */

@@ -11,9 +11,16 @@
 #include <sys/cdefs.h>
 #include <sys/types.h>
 
+#include <kernel/sched/sched_timing.h>
+
+struct schedee;
+
 struct sched_timing {
 	EMPTY_STRUCT_BODY
 };
+
+#define __SCHED_TIMING_INIT() \
+	{ }
 
 static inline void sched_timing_init(struct schedee *t) { }
 

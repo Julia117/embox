@@ -20,6 +20,7 @@
 #include <kernel/task/kernel_task.h>
 #include <kernel/task/task_priority.h>
 #include <kernel/thread.h>
+#include <compiler.h>
 
 struct task {
 	struct thread *tsk_main;
@@ -99,13 +100,9 @@ static inline int new_task(const char *name, void *(*run)(void *), void *arg) {
 	return -EPERM;
 }
 
-static inline void __attribute__((noreturn)) task_exit(void *res) {
+static inline void _NORETURN task_exit(void *res) {
 	while (1) {
 	}
-}
-
-static inline int task_notify_switch(struct thread *prev, struct thread *next) {
-	return 0;
 }
 
 static inline void task_thread_register(struct task *tsk, struct thread *t) {

@@ -4,11 +4,8 @@ package embox.arch.arm
 
 abstract module cmsis { }
 
-@DefaultImpl(platform_shutdown_stub)
-abstract module platform_shutdown { }
 
-module platform_shutdown_stub extends platform_shutdown {
-	source "platform_shutdown_stub.c"
+module head {
+	option boolean mmu_boot=false
+	source "head.S"
 }
-
-abstract module cpu_reset { }

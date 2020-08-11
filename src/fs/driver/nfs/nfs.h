@@ -11,7 +11,7 @@
 #define NFS_H_
 
 #include <stdint.h>
-#include <fs/node.h>
+#include <fs/inode.h>
 #include <net/l3/ipv4/ip.h>
 #include <sys/socket.h>
 #include <net/lib/rpc/rpc.h>
@@ -136,7 +136,7 @@ typedef struct create_params {
 /* RPC string */
 typedef struct rpc_string {
 	size_t len;
-	char data[NAME_MAX];
+	char data[NAME_MAX + 1];
 } rpc_string_t;
 
 typedef struct rpc_fh_string {

@@ -16,11 +16,11 @@
 #include <arpa/inet.h>
 #include <util/hashtable.h>
 
-#include <pnet/netfilter/match_lin.h>
-#include <pnet/core.h>
-#include <pnet/node.h>
-#include <pnet/repo.h>
-#include <pnet/graph.h>
+#include <pnet/node/skbuff_match/netfilter/match_lin.h>
+#include <pnet/core/core.h>
+#include <pnet/core/node.h>
+#include <pnet/core/repo.h>
+#include <pnet/core/graph.h>
 
 ARRAY_SPREAD_DECLARE(const struct pnet_module, __pnet_mod_repo);
 
@@ -410,7 +410,6 @@ int main(int argc, char **argv) {
 	net_node_t node;
 	_rule_setter setter;
 
-	getopt_init();
 
 	while (-1 != (opt = getopt(argc, argv, "hgnt:d:p:r:s:a:l:"))) {
 		switch(opt) {

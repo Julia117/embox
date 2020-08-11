@@ -32,7 +32,12 @@ abstract module context { }
 
 @Mandatory
 @DefaultImpl(embox.arch.generic.nommu)
-abstract module mmu { }
+abstract module mmu {
+	option number page_size
+}
+
+abstract module mmuinfo {
+}
 
 @Mandatory
 @DefaultImpl(embox.arch.generic.syscall_stub)
@@ -56,3 +61,5 @@ abstract module cpu_info { }
 
 abstract module vfork_entry { }
 abstract module fork_entry { }
+
+abstract module mem_barriers { }

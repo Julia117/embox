@@ -12,9 +12,10 @@
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 
 static void print_usage(void) {
-	printf("Usage: mkdir [ -m MODE ] DIR ...\n");
+	printf("Usage: mkdir [-v] [-m MODE] DIR ...\n");
 }
 
 int main(int argc, char **argv) {
@@ -23,7 +24,13 @@ int main(int argc, char **argv) {
 	int mode_set = 0;
 	int mode = 0777;
 
-	while (-1 != (opt = getopt(argc - 1, argv, "hm:"))) {
+	if (argc < 2) {
+		printf("%s: missing operand\n", argv[0]);
+		print_usage();
+		return 0;
+	}
+
+	while (-1 != (opt = getopt(argc - 1, argv, "hm:v"))) {
 		switch(opt) {
 		case 'h':
 			print_usage();
@@ -31,6 +38,9 @@ int main(int argc, char **argv) {
 		case 'm':
 			mode = strtol(optarg, NULL, 8);
 			mode_set = 1;
+			break;
+		case 'v':
+			mode |= VFS_DIR_VIRTUAL;
 			break;
 		default:
 			return 0;

@@ -23,8 +23,12 @@
 
 #include <util/dlist.h>
 #include <util/array.h>
+#include <util/log.h>
 
 #include <kernel/printk.h>
+#include <kernel/panic.h>
+
+#include <mem/heap/mspace_malloc.h>
 
 /* TODO make it per task field */
 //static DLIST_DEFINE(task_mem_segments);
@@ -33,30 +37,78 @@
 
 extern struct page_allocator *__heap_pgallocator;
 extern struct page_allocator *__heap_pgallocator2 __attribute__((weak));
-static struct page_allocator ** const mm_page_allocs[] = {
-	&__heap_pgallocator,
-	&__heap_pgallocator2,
+extern struct page_allocator *__heap_fixed_pgallocator __attribute__((weak));
+
+struct mm_heap_allocator {
+	struct page_allocator **pg_allocator;
+	heap_type_t type;
 };
+
+static struct mm_heap_allocator const mm_page_allocs[] = {
+	{ &__heap_pgallocator, HEAP_RAM },
+	{ &__heap_pgallocator2, HEAP_FAST_RAM },
+	{ &__heap_fixed_pgallocator, HEAP_EXTERN_MEM },
+};
+
+static struct mm_heap_allocator const *mm_cur_allocator =
+	&mm_page_allocs[0];
 
 static void *mm_segment_alloc(int page_cnt) {
 	void *ret;
 	int i;
+
+	ret = page_alloc(*mm_cur_allocator->pg_allocator, page_cnt);
+	if (ret) {
+		return ret;
+	}
+
+	/* Requsted memory wasn't allocated by mm_cur_allocator->pg_allocator above,
+	 * because due to there is no more free memory. Try find new allocator */
 	for (i = 0; i < ARRAY_SIZE(mm_page_allocs); i++) {
-		if (mm_page_allocs[i]) {
-			ret = page_alloc(*mm_page_allocs[i], page_cnt);
+		if (mm_page_allocs[i].pg_allocator
+				&& *mm_page_allocs[i].pg_allocator) {
+			ret = page_alloc(*mm_page_allocs[i].pg_allocator, page_cnt);
 			if (ret) {
+				mm_cur_allocator = &mm_page_allocs[i];
 				break;
 			}
 		}
 	}
+
 	return ret;
+}
+
+/* XXX This functionality is experimental and currently only used
+ * in PISJP (stm32f7-discovery). Please, be careful if you want to use
+ * this function. */
+int mspace_set_heap(heap_type_t type, heap_type_t *prev_type) {
+	if (prev_type) {
+		*prev_type = mm_cur_allocator->type;
+	}
+
+	switch (type) {
+	case HEAP_FAST_RAM:
+	case HEAP_RAM:
+	case HEAP_EXTERN_MEM:
+		if (!mm_page_allocs[type].pg_allocator) {
+			return -1;
+		}
+		mm_cur_allocator = &mm_page_allocs[type];
+		break;
+	default:
+		log_error("Unknown heap type - %d\n", type);
+		return -1;
+	}
+
+	return 0;
 }
 
 static void mm_segment_free(void *segment, int page_cnt) {
 	int i;
 	for (i = 0; i < ARRAY_SIZE(mm_page_allocs); i++) {
-		if (mm_page_allocs[i] && page_belong(*mm_page_allocs[i], segment)) {
-			page_free(*mm_page_allocs[i], segment, page_cnt);
+		if (mm_page_allocs[i].pg_allocator &&
+				page_belong(*mm_page_allocs[i].pg_allocator, segment)) {
+			page_free(*mm_page_allocs[i].pg_allocator, segment, page_cnt);
 			break;
 		}
 	}
@@ -76,64 +128,106 @@ static inline void *mm_to_segment(struct mm_segment *mm) {
 	return ((char *) mm + sizeof *mm);
 }
 
-static void *pointer_to_segment(void *ptr, struct dlist_head *mspace) {
+static void *pointer_to_mm(void *ptr, struct dlist_head *mspace) {
 	struct mm_segment *mm;
-	void *segment;
 
 	assert(ptr);
 	assert(mspace);
 
 	dlist_foreach_entry(mm, mspace, link) {
-		segment = mm_to_segment(mm);
-		if (pointer_inside_segment(segment, mm->size, ptr)) {
-			return segment;
+		if (pointer_inside_segment(mm_to_segment(mm), mm->size, ptr)) {
+			return mm;
 		}
 	}
 
 	return NULL;
 }
 
-void *mspace_memalign(size_t boundary, size_t size, struct dlist_head *mspace) {
-	void *block;
+static void *mspace_do_alloc(size_t boundary, size_t size, struct dlist_head *mspace) {
 	struct mm_segment *mm;
-	size_t segment_pages_cnt, segment_bytes_cnt;
-	int iter;
+	dlist_foreach_entry(mm, mspace, link) {
+		void *block = bm_memalign(mm_to_segment(mm), boundary, size);
+		if (block != NULL) {
+			return block;
+		}
+	}
+
+	return NULL;
+}
+
+/*
+ * It's basically required for more efficient memory consuming.
+ * It's more efficient to allocate many pages at once rather than
+ * many small pieces.
+ **/
+#if OPTION_GET(BOOLEAN, task_is_greed)
+static struct mm_segment *mm_try_alloc_segment(size_t size, size_t boundary) {
+	/* Try to allocate as much size as possible starting with 1Mb.
+	 * Why 1Mb? Don't know, magical number.. Since it should be maximum size
+	 * of all available heaps in Embox, but it's more difficult to implement. */
+	const size_t max_size = (0x100000 + PAGE_SIZE()) / PAGE_SIZE();
+	const size_t min_size = (size + boundary + PAGE_SIZE()) / PAGE_SIZE();
+	size_t i;
+	struct mm_segment *mm = NULL;
+
+	for (i = max_size; i > min_size; i--) {
+		mm = mm_segment_alloc(i);
+		if (mm) {
+			break;
+		}
+	}
+	if (mm) {
+		mm->size = i * PAGE_SIZE();
+	}
+	return mm;
+}
+#else
+static struct mm_segment *mm_try_alloc_segment(size_t size, size_t boundary) {
+	size_t pages_cnt;
+	struct mm_segment *mm = NULL;
+
+	pages_cnt = size / PAGE_SIZE() + boundary / PAGE_SIZE();
+	pages_cnt += (size % PAGE_SIZE() + boundary % PAGE_SIZE()
+			+ 2 * PAGE_SIZE()) / PAGE_SIZE();
+	mm = mm_segment_alloc(pages_cnt);
+	if (mm) {
+		mm->size = pages_cnt * PAGE_SIZE();
+	}
+	return mm;
+}
+#endif
+
+void *mspace_memalign(size_t boundary, size_t size, struct dlist_head *mspace) {
+	/* No corresponding heap was found */
+	struct mm_segment *mm;
+	void *block;
+
+	if (size == 0) {
+		return NULL;
+	}
 
 	assert(mspace);
 
-	block = NULL;
-	iter = 0;
+	block = mspace_do_alloc(boundary, size, mspace);
+	if (block) {
+		return block;
+	}
 
-	do {
-		assert(iter++ < 2, "%s\n", "memory allocation cyclic");
+	mm = mm_try_alloc_segment(size, boundary);
+	if (mm == NULL) {
+		return NULL;
+	}
+	dlist_head_init(&mm->link);
+	dlist_add_next(&mm->link, mspace);
 
-		dlist_foreach_entry(mm, mspace, link) {
-			block = bm_memalign(mm_to_segment(mm), boundary, size);
-			if (block != NULL) {
-				return block;
-			}
-		}
+	bm_init(mm_to_segment(mm), mm->size - sizeof(struct mm_segment));
 
-		/* No corresponding heap was found */
-		/* XXX allocate more approproate count of pages without redundancy */
-		/* Note, overflow may occur */
-		segment_pages_cnt = size / PAGE_SIZE() + boundary / PAGE_SIZE();
-		segment_pages_cnt += (size % PAGE_SIZE() + boundary % PAGE_SIZE()
-				+ 2 * PAGE_SIZE()) / PAGE_SIZE();
+	block = mspace_do_alloc(boundary, size, mspace);
+	if (!block) {
+		panic("new memory block is not sufficient to allocate requested size");
+	}
 
-		mm = mm_segment_alloc(segment_pages_cnt);
-		if (mm == NULL)
-			return NULL;
-
-		mm->size = segment_pages_cnt * PAGE_SIZE();
-		segment_bytes_cnt = mm->size - sizeof *mm;
-		dlist_head_init(&mm->link);
-		dlist_add_next(&mm->link, mspace);
-
-		bm_init(mm_to_segment(mm), segment_bytes_cnt);
-	} while(!block);
-
-	return NULL;
+	return block;
 }
 
 void *mspace_malloc(size_t size, struct dlist_head *mspace) {
@@ -142,15 +236,23 @@ void *mspace_malloc(size_t size, struct dlist_head *mspace) {
 }
 
 int mspace_free(void *ptr, struct dlist_head *mspace) {
-	void *segment;
+	struct mm_segment *mm;
 
 	assert(ptr);
 	assert(mspace);
 
-	segment = pointer_to_segment(ptr, mspace);
+	mm = pointer_to_mm(ptr, mspace);
 
-	if (segment != NULL) {
+	if (mm != NULL) {
+		void *segment;
+
+		segment = mm_to_segment(mm);
 		bm_free(segment, ptr);
+
+		if (bm_heap_is_empty(segment)) {
+			mm_segment_free(mm, mm->size / PAGE_SIZE());
+			dlist_del(&mm->link);
+		}
 	} else {
 		/* No segment containing pointer @c ptr was found. */
 #ifdef DEBUG
@@ -261,6 +363,10 @@ void mspace_deep_store(struct dlist_head *mspace, struct dlist_head *store_space
 void mspace_deep_restore(struct dlist_head *mspace, struct dlist_head *store_space, void *buf) {
 	struct dlist_head *raw_mm;
 	void *p;
+
+	assert(mspace);
+	assert(store_space);
+	assert(buf);
 
 	dlist_init(mspace);
 

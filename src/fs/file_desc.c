@@ -10,18 +10,17 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <assert.h>
-
+#include <sys/stat.h>
 
 #include <fs/perm.h>
-#include <fs/flags.h>
 #include <mem/objalloc.h>
 
 #include <fs/file_desc.h>
 #include <kernel/task.h>
-#include <kernel/task/idesc_table.h>
 #include <kernel/task/resource/idesc_table.h>
 #include <embox/unit.h>
 #include <util/err.h>
+#include <fs/inode.h>
 
 extern const struct idesc_xattrops file_idesc_xattrops;
 
@@ -37,7 +36,7 @@ static void file_desc_free(struct file_desc *desc) {
 
 extern const struct idesc_ops idesc_file_ops;
 
-struct file_desc *file_desc_create(struct node *node, int flag) {
+struct file_desc *file_desc_create(struct inode *node, int flag) {
 	struct file_desc *desc;
 	int perm_flags;
 	int ret;
@@ -49,10 +48,10 @@ struct file_desc *file_desc_create(struct node *node, int flag) {
 	/* setup access mode */
 	perm_flags = 0;
 	if ((flag & O_WRONLY) || (flag & O_RDWR)) {
-		perm_flags |= FS_MAY_WRITE;
+		perm_flags |= S_IWOTH;
 	}
 	if (!(flag & O_WRONLY)) {
-		perm_flags |= FS_MAY_READ;
+		perm_flags |= S_IROTH;
 	}
 
 	if (0 > (ret = fs_perm_check(node, perm_flags))) {
@@ -60,19 +59,20 @@ struct file_desc *file_desc_create(struct node *node, int flag) {
 		return err_ptr(EACCES);
 	}
 
-	desc->node = node;
+	desc->f_inode = node;
 	desc->file_flags = flag & O_APPEND;
 	desc->cursor = 0;
 
-	idesc_init(&desc->idesc, &idesc_file_ops, perm_flags);
-	desc->idesc.idesc_xattrops = &file_idesc_xattrops;
+	idesc_init(&desc->f_idesc, &idesc_file_ops, flag);
+	desc->f_idesc.idesc_xattrops = &file_idesc_xattrops;
 
 	return desc;
 }
 
 int file_desc_destroy(struct file_desc *fdesc) {
 	assert(fdesc);
-	assert(fdesc->idesc.idesc_ops == &idesc_file_ops);
+
+	inode_del(fdesc->f_inode);
 
 	file_desc_free(fdesc);
 	return 0;
@@ -96,4 +96,39 @@ struct file_desc *file_desc_get(int idx) {
 
 	return (struct file_desc *) idesc;
 
+}
+
+off_t file_get_pos(struct file_desc * file) {
+	return file->cursor;
+}
+
+off_t file_set_pos(struct file_desc *file, off_t off) {
+	file->cursor = off;
+
+	return file->cursor;
+}
+
+size_t file_get_size(struct file_desc *file) {
+	struct nas *nas = file->f_inode->nas;
+	return nas->fi->ni.size;
+}
+
+void file_set_size(struct file_desc *file, size_t size) {
+	struct nas *nas = file->f_inode->nas;
+	nas->fi->ni.size = size;
+}
+
+void *file_get_inode_data(struct file_desc *file) {
+	assert(file->f_inode);
+	assert(file->f_inode->nas->fi->privdata);
+
+	return file->f_inode->nas->fi->privdata;
+}
+
+struct file_desc *file_desc_from_idesc(struct idesc *idesc) {
+	return (struct file_desc *)idesc;
+}
+
+void file_desc_set_file_info(struct file_desc *file, void *fi) {
+	file->file_info = fi;
 }

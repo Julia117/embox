@@ -1,6 +1,9 @@
 package embox.driver.diag
 
-abstract module diag_api {
+module diag_api {}
+
+module xen_diag extends diag_api {
+	source "xen_diag.c"
 }
 
 module mem_diag extends diag_api {

@@ -9,7 +9,6 @@
 
 #include <kernel/task.h>
 
-#include <kernel/task/idesc_table.h>
 #include <kernel/task/resource/idesc_table.h>
 #include <fs/idesc.h>
 
@@ -69,7 +68,7 @@ int index_descriptor_flags_get(int fd) {
 		return -ENOENT;
 	}
 
-	return idesc->idesc_flags;
+	return idesc->idesc_flags & ~O_ACCESS_MASK;
 }
 
 int index_descriptor_flags_set(int fd, int flags) {
@@ -80,7 +79,8 @@ int index_descriptor_flags_set(int fd, int flags) {
 		return -ENOENT;
 	}
 
-	idesc->idesc_flags = flags;
+	flags &= ~O_ACCESS_MASK;
+	idesc->idesc_flags |= flags;
 
 	return 0;
 }

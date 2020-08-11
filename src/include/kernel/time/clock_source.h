@@ -39,7 +39,6 @@ struct clock_source {
 	struct time_event_device *event_device;
 	struct time_counter_device *counter_device;
 	volatile clock_t jiffies; /**< count of jiffies since clock source started */
-	clock_t jiffies_cnt; /**< interjiffes count */
 	uint32_t flags; /**< periodical or not */
 	struct timespec (*read)(struct clock_source *cs);
 	uint32_t counter_mult;
@@ -81,12 +80,12 @@ struct clock_source_head {
 };
 
 #define TIME_EVENT_DEVICE(ted) \
-	ARRAY_SPREAD_DECLARE(const struct time_event_device *, \
+	ARRAY_SPREAD_DECLARE(const struct time_event_device *const, \
 			__event_devices) \
     ARRAY_SPREAD_ADD(__event_devices, ted);
 
 #define TIME_COUNTER_DEVICE(tcd) \
-	ARRAY_SPREAD_DECLARE(const struct time_counter_device *, \
+	ARRAY_SPREAD_DECLARE(const struct time_counter_device *const, \
 			__counter_devices); \
     ARRAY_SPREAD_ADD(__counter_devices, tcd);
 

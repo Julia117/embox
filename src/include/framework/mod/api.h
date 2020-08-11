@@ -15,7 +15,7 @@
 
 #include "types.h"
 
-ARRAY_SPREAD_DECLARE(const struct mod *, __mod_registry);
+ARRAY_SPREAD_DECLARE(const struct mod *const, __mod_registry);
 
 /**
  * TODO Module info emitted by EMBuild dependency injection model generator.
@@ -115,20 +115,6 @@ extern bool mod_is_running(const struct mod *mod);
  *   If the @a mod is not running.
  */
 extern int mod_activate_app(const struct mod *mod);
-
-/**
- * Check module for integrity.
- *
- * @param mod
- *
- * @return
- *   Integrity boolean
- * @retval true
- *   If mod is OK
- * @retval false
- *   If mod is broken
- */
-extern bool mod_check(const struct mod *mod);
 
 /**
  * Search for a module with a given FQN (fully.qualified.name)

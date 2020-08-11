@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -u
 
@@ -36,25 +36,29 @@ build_embox() {
 }
 
 test_suite_setup() {
+	$CONT_RUN generic/save_conf
+
 	build_embox $EMBOX1_START_SCRIPT $EMBOX1_KERNEL
 	build_embox $EMBOX2_START_SCRIPT $EMBOX2_KERNEL
 
 	export CONTINIOUS_RUN_TIMEOUT=120
 	AUTOQEMU_NICS="" AUTOQEMU_NICS_CONFIG="" KERNEL=$EMBOX1_KERNEL $CONT_RUN generic/qemu_bg \
-		 "-net nic,vlan=0,model=e1000,macaddr=AA:BB:CC:DD:EE:12
-			-net tap,vlan=0,script=./scripts/qemu/start_script,downscript=./scripts/qemu/stop_script
-			-net nic,model=e1000,vlan=1,macaddr=AA:BB:CC:DD:EE:22 -net socket,vlan=1,listen=:12345" \
+		 "-net nic,model=virtio,netdev=n0,macaddr=AA:BB:CC:DD:EE:12
+			-netdev tap,script=./scripts/qemu/start_script,downscript=./scripts/qemu/stop_script,vnet_hdr=no,id=n0
+			-net nic,model=virtio,netdev=n1,macaddr=AA:BB:CC:DD:EE:22 -netdev socket,id=n1,listen=:12345" \
 		 $QEMU1_PID_FILE
 
 	AUTOQEMU_NICS="" AUTOQEMU_NICS_CONFIG="" KERNEL=$EMBOX2_KERNEL $CONT_RUN generic/qemu_bg \
-		 "-net nic,model=e1000,vlan=3,macaddr=AA:BB:CC:DD:EE:23
-			-net socket,vlan=3,connect=:12345" \
+		 "-net nic,model=virtio,netdev=n2,macaddr=AA:BB:CC:DD:EE:23
+			-netdev socket,id=n2,connect=:12345" \
 		 $QEMU2_PID_FILE
 
 	sudo route add default gw $QEMU1_ETH0 dev $TAP_DEV
 }
 
 test_suite_teardown() {
+	$CONT_RUN generic/restore_conf
+
 	$CONT_RUN generic/qemu_bg_kill "" $QEMU1_PID_FILE || true
 	$CONT_RUN generic/qemu_bg_kill "" $QEMU2_PID_FILE || true
 	rm $EMBOX1_KERNEL $EMBOX2_KERNEL || true

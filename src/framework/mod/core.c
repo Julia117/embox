@@ -34,8 +34,8 @@
 #define mod_flag_set(mod, mask) do (mod)->priv->flags |=  (mask); while (0)
 #define mod_flag_clr(mod, mask) do (mod)->priv->flags &= ~(mask); while (0)
 
-ARRAY_SPREAD_DEF_TERMINATED(const struct mod *, __mod_registry, NULL);
-ARRAY_SPREAD_DEF_TERMINATED(const struct mod_sec_label *, __mod_sec_labels, NULL);
+ARRAY_SPREAD_DEF_TERMINATED(const struct mod *const, __mod_registry, NULL);
+ARRAY_SPREAD_DEF_TERMINATED(const struct mod_sec_label *const, __mod_sec_labels, NULL);
 
 bool mod_is_running(const struct mod *mod) {
 	assert(mod);
@@ -96,22 +96,6 @@ int mod_activate_app(const struct mod *mod) {
 	}
 
 	return 0;
-}
-
-bool mod_check(const struct mod *mod) {
-	const struct mod_sec_label *sec_label;
-	assert(mod);
-
-	if (!mod->build_info || !mod->build_info->label)
-		return true;
-
-	array_spread_nullterm_foreach(sec_label, __mod_sec_labels) {
-		if (sec_label->mod == mod)
-			return !memcmp(&sec_label->label, mod->build_info->label,
-					sizeof(*mod->build_info->label));
-	}
-
-	return true;
 }
 
 const struct mod *mod_lookup(const char *fqn) {

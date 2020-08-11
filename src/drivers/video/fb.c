@@ -13,134 +13,180 @@
 #include <limits.h>
 #include <errno.h>
 
-#include <util/math.h>
+#include <kernel/thread/sync/mutex.h>
+#include <kernel/printk.h>
 #include <util/dlist.h>
+#include <util/log.h>
+#include <util/math.h>
 
-#include <embox/device.h>
+#include <drivers/char_dev.h>
 #include <drivers/video/fb.h>
 
 #include <framework/mod/options.h>
 #include <mem/misc/pool.h>
 
-
-
 #define MODOPS_FB_AMOUNT OPTION_GET(NUMBER, fb_amount)
 
-POOL_DEF(fb_pool, struct fb_info, MODOPS_FB_AMOUNT);
-static struct fb_info *registered_fb[MODOPS_FB_AMOUNT];
-static unsigned int num_registered_fb = 0;
+struct fb_dev {
+	struct dlist_head link;
+	struct fb_info info;
+};
 
-extern const struct kfile_operations fb_device_ops;
+static int fb_update_current_var(struct fb_info *info);
 
-struct fb_info * fb_alloc(void) {
-	struct fb_info *info;
+static void fb_default_copyarea(struct fb_info *info, const struct fb_copyarea *area);
+static void fb_default_cursor(struct fb_info *info, const struct fb_cursor *cursor);
+static void fb_default_imageblit(struct fb_info *info, const struct fb_image *image);
+static void fb_default_fillrect(struct fb_info *info, const struct fb_fillrect *rect);
 
-	info = pool_alloc(&fb_pool);
-	if (info == NULL) {
-		return NULL;
+struct mutex fb_static = MUTEX_INIT_STATIC;
+POOL_DEF(fb_pool, struct fb_dev, MODOPS_FB_AMOUNT);
+static DLIST_DEFINE(fb_list);
+static unsigned int fb_count = 0;
+
+#define fb_readb(addr)       (*(uint8_t *) (addr))
+#define fb_readw(addr)       (*(uint16_t *) (addr))
+#define fb_readl(addr)       (*(uint32_t *) (addr))
+#define fb_writeb(val, addr) (*(uint8_t *) (addr) = (val))
+#define fb_writew(val, addr) (*(uint16_t *) (addr) = (val))
+#define fb_writel(val, addr) (*(uint32_t *) (addr) = (val))
+#define fb_memset            memset
+#define fb_memcpy_fromfb     memcpy
+#define fb_memcpy_tofb       memcpy
+
+static void fb_ops_fixup(struct fb_ops *ops) {
+	if (!ops->fb_copyarea) {
+		ops->fb_copyarea = fb_default_copyarea;
 	}
+	if (!ops->fb_imageblit) {
+		ops->fb_imageblit = fb_default_imageblit;
+	}
+	if (!ops->fb_fillrect) {
+		ops->fb_fillrect = fb_default_fillrect;
+	}
+	if (!ops->fb_cursor) {
+		ops->fb_cursor = fb_default_cursor;
+	}
+}
+
+struct fb_info *fb_create(const struct fb_ops *ops, char *map_base, size_t map_size) {
+	struct fb_dev *dev;
+	struct fb_info *info = NULL;
+
+	assert(ops);
+
+	mutex_lock(&fb_static);
+	{
+		dev = pool_alloc(&fb_pool);
+		if (!dev) {
+			log_error("Failed to create framebuffer");
+			goto out;
+		}
+
+		info = &dev->info;
+
+		info->id = fb_count++;
+		dlist_init(&dev->link);
+		dlist_add_next(&dev->link, &fb_list);
+		info->screen_base = map_base;
+		info->screen_size = map_size;
+
+		memcpy(&info->ops, ops, sizeof(struct fb_ops));
+		fb_ops_fixup(&info->ops);
+		fb_update_current_var(info);
+		fb_devfs_create(info, map_base, map_size);
+	}
+out:
+	mutex_unlock(&fb_static);
 
 	return info;
 }
 
-void fb_release(struct fb_info *info) {
-	assert(info != NULL);
-	pool_free(&fb_pool, info);
-}
+void fb_delete(struct fb_info *info) {
+	struct fb_dev *dev = member_cast_out(info, struct fb_dev, info);
 
-struct fb_list_item {
-	struct dlist_head list;
-	struct fb_info *fb_info;
-};
-
-static DLIST_DEFINE(fb_repo);
-POOL_DEF(fb_repo_pool, struct fb_list_item, 0x4);
-
-int fb_register(struct fb_info *info) {
-	unsigned int num;
-	struct fb_list_item *item;
-
-	assert(info != NULL);
-
-	if (num_registered_fb == sizeof registered_fb / sizeof registered_fb) {
-		return -ENOMEM;
+	if (info) {
+		mutex_lock(&fb_static);
+		{
+			dlist_del(&dev->link);
+			pool_free(&fb_pool, dev);
+		}
+		mutex_unlock(&fb_static);
 	}
+}
 
-	++num_registered_fb;
+struct fb_info *fb_lookup(int id) {
+	struct fb_info *ret;
 
-	for (num = 0; (num < num_registered_fb) && (registered_fb[num] != NULL); ++num);
-
-	registered_fb[num] = info;
-	info->node = num;
-
-	if(NULL == (item = pool_alloc(&fb_repo_pool))) {
-		return -ENOMEM;
+	ret = NULL;
+	mutex_lock(&fb_static);
+	{
+		struct fb_dev *fb_dev;
+		dlist_foreach_entry(fb_dev, &fb_list, link) {
+			if (fb_dev->info.id == id) {
+				ret = &fb_dev->info;
+				break;
+			}
+		}
 	}
-	dlist_add_next(dlist_head_init(&item->list), &fb_repo);
-
-	return ENOERR;
+	mutex_unlock(&fb_static);
+	return ret;
 }
 
-int fb_unregister(struct fb_info *info) {
-	assert(info != NULL);
-	assert(registered_fb[info->node] == info);
-	registered_fb[info->node] = NULL;
-	return 0;
-}
-
-struct fb_info * fb_lookup(const char *name) {
-	unsigned int num;
-
-	assert(name != NULL);
-
-	sscanf(name, "fb%u", &num);
-
-	assert(num < sizeof registered_fb / sizeof registered_fb[0]);
-
-	return registered_fb[num];
-}
-
-int fb_set_var(struct fb_info *info, struct fb_var_screeninfo *var) {
+int fb_set_var(struct fb_info *info, const struct fb_var_screeninfo *var) {
 	int ret;
-	struct fb_var_screeninfo old;
 
 	assert(info != NULL);
 	assert(var != NULL);
 
-	if (info->ops->fb_check_var == NULL) {
-		memcpy(var, &info->var, sizeof(struct fb_var_screeninfo));
-		return 0;
-	}
-
-	ret = info->ops->fb_check_var(var, info);
-	if (ret != 0) {
-		return ret;
-	}
-
-	memcpy(&old, &info->var, sizeof(struct fb_var_screeninfo));
-	memcpy(&info->var, var, sizeof(struct fb_var_screeninfo));
-
-	if (info->ops->fb_set_par != NULL) {
-		ret = info->ops->fb_set_par(info);
-		if (ret != 0) {
-			memcpy(&info->var, &old, sizeof(struct fb_var_screeninfo));
+	if (info->ops.fb_set_var != NULL) {
+		ret = info->ops.fb_set_var(info, var);
+		if (ret < 0) {
 			return ret;
 		}
+		memcpy(&info->var, var, sizeof(struct fb_var_screeninfo));
 	}
 
 	return 0;
 }
 
-int fb_try_mode(struct fb_var_screeninfo *var, struct fb_info *info,
-		const struct fb_videomode *mode, uint32_t bpp) {
-	fb_videomode_to_var(var, mode);
-	var->bits_per_pixel = bpp;
-
-	if (info->ops->fb_check_var != NULL) {
-		return info->ops->fb_check_var(var, info);
-	}
-
+int fb_get_var(struct fb_info *info, struct fb_var_screeninfo *var) {
+	memcpy(var, &info->var, sizeof(struct fb_var_screeninfo));
 	return 0;
+}
+
+void fb_copyarea(struct fb_info *info, const struct fb_copyarea *area) {
+	info->ops.fb_copyarea(info, area);
+}
+
+void fb_cursor(struct fb_info *info, const struct fb_cursor *cursor) {
+	info->ops.fb_cursor(info, cursor);
+}
+
+void fb_imageblit(struct fb_info *info, const struct fb_image *image) {
+	info->ops.fb_imageblit(info, image);
+}
+
+#define _val_fixup(x, low, high) (min((high), max((low), (x))))
+void fb_fillrect(struct fb_info *info, const struct fb_fillrect *rect) {
+	assert(info);
+	assert(rect);
+
+	/* Don't touch original values if fixup needed */
+	struct fb_fillrect r = *rect;
+	r.dx     = _val_fixup(rect->dx, 0, info->var.xres);
+	r.dy     = _val_fixup(rect->dy, 0, info->var.yres);
+	r.width  = _val_fixup(rect->width, 0, info->var.xres - r.dx);
+	r.height = _val_fixup(rect->height, 0, info->var.yres - r.dy);
+
+	info->ops.fb_fillrect(info, &r);
+}
+
+static int fb_update_current_var(struct fb_info *info) {
+	if (info->ops.fb_get_var != NULL) {
+		return info->ops.fb_get_var(info, &info->var);
+	}
+	return -ENOENT;
 }
 
 static void bitcpy(uint32_t *dst, uint32_t dstn, uint32_t *src, uint32_t srcn,
@@ -335,7 +381,7 @@ static void bitcpy_rev(uint32_t *dst, uint32_t dstn, uint32_t *src,
 	}
 }
 
-void fb_copyarea(struct fb_info *info, const struct fb_copyarea *area) {
+static void fb_default_copyarea(struct fb_info *info, const struct fb_copyarea *area) {
 	uint32_t width, height, *dst, dstn, *src, srcn;
 
 	assert(info != NULL);
@@ -348,8 +394,8 @@ void fb_copyarea(struct fb_info *info, const struct fb_copyarea *area) {
 	height = min(area->height, info->var.yres - max(area->sy, area->dy));
 
 	assert(info->screen_base != NULL);
-	dstn = srcn = (uint32_t)info->screen_base % sizeof(*dst);
-	dst = src = (uint32_t *)((uint32_t)info->screen_base - dstn);
+	dstn = srcn = (uintptr_t)info->screen_base % sizeof(*dst);
+	dst = src = (uint32_t *)((uintptr_t)info->screen_base - dstn);
 	dstn = dstn * CHAR_BIT + (area->dy * info->var.xres
 			+ area->dx) * info->var.bits_per_pixel;
 	srcn = srcn * CHAR_BIT + (area->sy * info->var.xres
@@ -383,6 +429,7 @@ void fb_copyarea(struct fb_info *info, const struct fb_copyarea *area) {
 }
 
 static uint32_t pixel_to_pat(uint32_t bpp, uint32_t pixel) {
+	pixel &= ~((uint32_t )-1 << bpp);
 	return bpp == 1 ? 0xffffffffUL * pixel
 			: bpp == 2 ? 0x55555555UL * pixel
 			: bpp == 4 ? 0x11111111UL * pixel
@@ -476,7 +523,7 @@ static void bitfill_rev(uint32_t *dst, uint32_t dstn, uint32_t pat,
 	}
 }
 
-void fb_fillrect(struct fb_info *info, const struct fb_fillrect *rect) {
+static void fb_default_fillrect(struct fb_info *info, const struct fb_fillrect *rect) {
 	uint32_t width, height, pat_orig, pat, *dst, dstn, loff, roff;
 	void (*fill_op)(uint32_t *dst, uint32_t dstn, uint32_t pat,
 		uint32_t loff, uint32_t roff, uint32_t len);
@@ -492,8 +539,8 @@ void fb_fillrect(struct fb_info *info, const struct fb_fillrect *rect) {
 	pat_orig = pixel_to_pat(info->var.bits_per_pixel, rect->color);
 
 	assert(info->screen_base != NULL);
-	dstn = (uint32_t)info->screen_base % sizeof(*dst);
-	dst = (uint32_t *)((uint32_t)info->screen_base - dstn);
+	dstn = (uintptr_t)info->screen_base % sizeof(*dst);
+	dst = (uint32_t *)((uintptr_t)info->screen_base - dstn);
 	dstn = dstn * CHAR_BIT + (rect->dy * info->var.xres
 			+ rect->dx) * info->var.bits_per_pixel;
 	roff = sizeof(*dst) * CHAR_BIT % info->var.bits_per_pixel;
@@ -513,7 +560,7 @@ void fb_fillrect(struct fb_info *info, const struct fb_fillrect *rect) {
 	}
 }
 
-void fb_imageblit(struct fb_info *info, const struct fb_image *image) {
+static void fb_default_imageblit(struct fb_info *info, const struct fb_image *image) {
 	/* TODO it's slow version:) */
 	uint32_t i, j;
 	struct fb_fillrect rect;
@@ -531,12 +578,12 @@ void fb_imageblit(struct fb_info *info, const struct fb_image *image) {
 			rect.dx = image->dx + i * rect.width;
 			rect.color = *(uint8_t *)(image->data + j) & (1 << ((image->width - i - 1)))
 					? image->fg_color : image->bg_color;
-			info->ops->fb_fillrect(info, &rect);
+			info->ops.fb_fillrect(info, &rect);
 		}
 	}
 }
 
-void fb_cursor(struct fb_info *info, const struct fb_cursor *cursor) {
+static void fb_default_cursor(struct fb_info *info, const struct fb_cursor *cursor) {
 	uint32_t i, j;
 	struct fb_fillrect rect;
 
@@ -552,7 +599,140 @@ void fb_cursor(struct fb_info *info, const struct fb_cursor *cursor) {
 		rect.dy = cursor->hot.y * cursor->image.height + j * rect.height;
 		for (i = 0; i < cursor->image.width; ++i) {
 			rect.dx = cursor->hot.x * cursor->image.width + i * rect.width;
-			info->ops->fb_fillrect(info, &rect);
+			info->ops.fb_fillrect(info, &rect);
 		}
 	}
+}
+
+int pix_fmt_has_alpha(enum pix_fmt fmt) {
+	return (fmt == RGBA8888) || (fmt == BGRA8888);
+}
+
+int pix_fmt_bpp(enum pix_fmt fmt) {
+	switch (fmt) {
+	case RGB888:
+	case BGR888:
+	case RGBA8888:
+	case BGRA8888:
+		return 32;
+	case RGB565:
+	case BGR565:
+		return 16;
+	default:
+		log_error("Wrong pixel format=%d, assume bpp=1", fmt);
+		return 8;
+	}
+}
+
+int pix_fmt_chan_bits(enum pix_fmt fmt, enum pix_chan chan) {
+	switch (fmt) {
+	case BGR888:
+	case RGB888:
+		if (chan == ALPHA_CHAN)
+			return 0;
+		return 8;
+	case BGRA8888:
+	case RGBA8888:
+		return 8;
+	case RGB565:
+	case BGR565:
+		if (chan == ALPHA_CHAN)
+			return 0;
+		if (chan == GREEN_CHAN)
+			return 6;
+		return 5;
+	default:
+		log_error("Wrong pixel format=%d", fmt);
+		return 0;
+	}
+}
+
+/* sr - shift of red component, sg - for green, etc.
+ * dr - bits of red componen, dg - for green, etc. */
+static const struct fb_rgb_conv {
+	uint8_t sr, sg, sb, sa, dr, dg, db, da;
+} rgb_conv[] = {
+	[RGB888]   = { 0,  8,  16, 24, 8, 8, 8, 0, },
+	[BGR888]   = { 16, 8,  0,  24, 8, 8, 8, 0, },
+	[RGBA8888] = { 0,  8,  16, 24, 8, 8, 8, 8, },
+	[BGRA8888] = { 16, 8,  0,  24, 8, 8, 8, 8, },
+	[RGB565]   = { 0,  5,  11, 16, 5, 6, 5, 0, },
+	[BGR565]   = { 11, 5,  0,  16, 5, 6, 5, 0, },
+};
+
+static inline int fb_fmt_supported(enum pix_fmt fmt) {
+	return
+		(fmt == RGB888)   || (fmt == BGR888) || (fmt == RGBA8888) ||
+		(fmt == BGRA8888) || (fmt == RGB565) || (fmt == BGR565);
+}
+
+static inline int fb_component_conv(int c, int in_dx, int out_dx) {
+	if (in_dx > out_dx) {
+		return c >> (in_dx - out_dx);
+	} else {
+		return c << (out_dx - in_dx);
+	}
+}
+
+static inline void fb_copy_pixel(char *dst, int px, int bpp) {
+	int i;
+
+	switch (bpp) {
+	case 1:
+		*(uint8_t *)dst = px;
+		break;
+	case 2:
+		*(uint16_t *)dst = px;
+		break;
+	case 4:
+		*(uint32_t *)dst = px;
+		break;
+	default:
+		for (i = 0; i < bpp; i++) {
+			dst[i] = px & 0xff;
+			px >>= bpp;
+		}
+		break;
+	}
+}
+
+int pix_fmt_convert(void *src, void *dst, int n,
+		enum pix_fmt in, enum pix_fmt out) {
+	int i, a, r, g, b, src_bpp, dst_bpp;
+	uint32_t in_px, out_px;
+	struct fb_rgb_conv in_cv, out_cv;
+
+	if (!fb_fmt_supported(in) || !fb_fmt_supported(out)) {
+		return -1;
+	}
+
+	in_cv = rgb_conv[in];
+	out_cv = rgb_conv[out];
+
+	src_bpp = (in_cv.da + in_cv.dr + in_cv.dg + in_cv.db) / 8;
+	dst_bpp = (out_cv.da + out_cv.dr + out_cv.dg + out_cv.db) / 8;
+
+	for (i = 0; i < n; i++) {
+		in_px = *(uint32_t *)src;
+
+		a = ((in_px >> in_cv.sa) & 0xff) >> (8 - in_cv.da);
+		r = ((in_px >> in_cv.sr) & 0xff) >> (8 - in_cv.dr);
+		g = ((in_px >> in_cv.sg) & 0xff) >> (8 - in_cv.dg);
+		b = ((in_px >> in_cv.sb) & 0xff) >> (8 - in_cv.db);
+
+		a = fb_component_conv(a, in_cv.da, out_cv.da);
+		r = fb_component_conv(r, in_cv.dr, out_cv.dr);
+		g = fb_component_conv(g, in_cv.dg, out_cv.dg);
+		b = fb_component_conv(b, in_cv.db, out_cv.db);
+
+		out_px = (a << out_cv.sa) | (r << out_cv.sr) |
+		         (g << out_cv.sg) | (b << out_cv.sb);
+
+		fb_copy_pixel(dst, out_px, dst_bpp);
+
+		dst += dst_bpp;
+		src += src_bpp;
+	}
+
+	return 0;
 }

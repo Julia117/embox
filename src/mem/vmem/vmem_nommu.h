@@ -1,24 +1,22 @@
 /**
  * @file
+ * @brief Virtual memory subsystem
  *
- * @date Aug 6, 2014
- * @author: Anton Bondarev
+ * @date 05.10.2012
+ * @author Anton Bulychev
  */
 
-#ifndef VMEM_NOMMU_H_
-#define VMEM_NOMMU_H_
+#ifndef VMEM_NOMMU_H
+#define VMEM_NOMMU_H
 
-static inline void *mmap_device_memory(void *addr,
-                           size_t len,
-                           int prot,
-                           int flags,
-                           uint64_t physical){
+#include <hal/mmu.h>
 
-	return addr;
-}
+#define vmem_create_context(ctx)
 
-static inline int munmap(void *addr, size_t size) {
-	return 0;
-}
+#define vmem_current_context() 0
 
-#endif /* VMEM_NOMMU_H_ */
+#define vmem_free_context(ctx)
+
+#define vmem_translate(a, b, c) (b)
+
+#endif /* VMEM_NOMMU_H */

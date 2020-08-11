@@ -4,98 +4,95 @@
  *
  * @date 05.10.2012
  * @author Anton Bulychev
+ * @author Anton Bondarev
  */
+
+#include <framework/mod/options.h>
+#include <util/log.h>
+
+#include <stdint.h>
 #include <sys/mman.h>
+#include <inttypes.h>
 
 #include <embox/unit.h>
-
 #include <hal/mmu.h>
-#include <mem/vmem.h>
-#include <mem/vmem/vmem_alloc.h>
-#include <mem/mapping/marea.h>
-#include <mem/mmap.h>
-
 #include <kernel/panic.h>
-
 #include <kernel/task/resource/mmap.h>
 #include <kernel/task/kernel_task.h>
+#include <mem/vmem.h>
+#include <mem/vmem/vmem_alloc.h>
+#include <mem/mmap.h>
 
-static int mmu_enabled;
+#include <util/binalign.h>
+#include <util/math.h>
 
 /* Section pointers. */
 extern char _text_vma, _rodata_vma, _data_vma, _bss_vma;
 extern char _text_len, _rodata_len, _data_len, _bss_len_with_reserve;
 
-extern void mmap_add_marea(struct emmap *mmap, struct marea *marea);
-
-void vmem_get_idx_from_vaddr(mmu_vaddr_t virt_addr, size_t *pgd_idx, size_t *pmd_idx, size_t *pte_idx) {
-	*pgd_idx = ((uint32_t) virt_addr & MMU_PGD_MASK) >> MMU_PGD_SHIFT;
-	*pmd_idx = ((uint32_t) virt_addr & MMU_PMD_MASK) >> MMU_PMD_SHIFT;
-	*pte_idx = ((uint32_t) virt_addr & MMU_PTE_MASK) >> MMU_PTE_SHIFT;
-}
-
-static int vmem_kernel_map_marea(void *start, uint32_t len, uint32_t flags) {
-	struct marea *ma;
-
-	ma = marea_create((mmu_paddr_t) start, (mmu_paddr_t) start + len, flags, false);
-	if (!ma) {
-		return -1;
-	}
-
-	mmap_add_marea(task_resource_mmap(task_kernel_task()), ma);
-	return 0;
-}
-
-void vmem_on(void) {
-	mmu_on();
-	mmu_enabled = 1;
-}
-
-void vmem_off(void) {
-	mmu_off();
-	mmu_enabled = 0;
-}
-
-int vmem_mmu_enabled(void) {
-	return mmu_enabled;
-}
-
 int vmem_map_kernel(void) {
 	int err = 0;
-
+	uintptr_t kernel_map_start;
+	uintptr_t kernel_map_end;
+	size_t kernel_map_size;
 	/* Map sections. */
-	err |= vmem_kernel_map_marea(&_text_vma, (size_t) &_text_len,
+
+	kernel_map_start = (uintptr_t) min(
+			min(&_text_vma, &_data_vma),
+			min(&_rodata_vma, &_bss_vma)
+		) & ~MMU_PAGE_MASK;
+
+	kernel_map_end = (uintptr_t) max(
+			max(&_text_vma + (size_t) &_text_len,
+				&_data_vma + (size_t) &_data_len),
+			max(&_rodata_vma + (size_t) &_rodata_len,
+				&_bss_vma + (size_t) &_bss_len_with_reserve));
+
+	kernel_map_size = binalign_bound(kernel_map_end - kernel_map_start,
+			MMU_PAGE_SIZE);
+	log_debug("kernel mapping at 0x%" PRIxPTR " size 0x%" PRIxPTR " flags 0x%" PRIx32 "",
+			kernel_map_start,
+			kernel_map_size,
 			PROT_WRITE | PROT_READ | PROT_EXEC);
-	err |= vmem_kernel_map_marea(&_data_vma, (size_t) &_data_len,
-			PROT_WRITE | PROT_READ);
-	err |= vmem_kernel_map_marea(&_rodata_vma, (size_t) &_rodata_len,
-			PROT_READ);
-	err |= vmem_kernel_map_marea(&_bss_vma, (size_t) &_bss_len_with_reserve,
-			PROT_WRITE | PROT_READ);
 
-#if 0
-	// XXX below
-	// for sparc
-	err |= vmem_map_on_itself(ctx, (void *) 0x80000000, (size_t) 0x100000,
-			VMEM_PAGE_WRITABLE);
-
-	// for sparc greth
-	err |= vmem_map_on_itself(ctx, (void *) 0x90000000, (size_t) 0x1000,
-			VMEM_PAGE_WRITABLE);
-
-	// for microblaze
-	err |= vmem_map_on_itself(ctx, (void *) 0x84000000, (size_t) 0x1000,
-			VMEM_PAGE_WRITABLE);
-
-	// mapping x86 video buffer
-	err |= vmem_map_on_itself(ctx, (void *) 0xB8000, (size_t) 0x1000,
-			VMEM_PAGE_WRITABLE);
-#endif
-
+	err = mmap_place(task_resource_mmap(task_kernel_task()),
+				kernel_map_start,
+				kernel_map_size,
+				PROT_WRITE | PROT_READ | PROT_EXEC);
 	return err;
 }
 
-void vmem_handle_page_fault(mmu_vaddr_t virt_addr) {
-	panic("MMU page fault: virt_addr - 0x%x\n", (unsigned int) virt_addr);
-}
+EMBOX_UNIT_INIT(vmem_init);
+static int vmem_init(void) {
+	struct marea *marea;
+	struct emmap *emmap;
+	struct task *task;
 
+	if (vmem_map_kernel()) {
+		log_error("Failed to map kernel memory!");
+		return -1;
+	}
+
+	log_debug("kernel has been successfully mapped");
+	task_foreach(task) {
+		emmap = task_resource_mmap(task);
+		dlist_foreach_entry(marea, &emmap->marea_list, mmap_link) {
+			log_debug("map region (base 0x%" PRIxPTR " size %zu flags 0x%" PRIx32 ")",
+					marea->start, marea->size, marea->flags);
+			if (vmem_map_region(emmap->ctx,
+					marea->start,
+					marea->start,
+					marea->size,
+					marea->flags)) {
+				panic("Failed to initialize kernel memory mapping");
+			}
+		}
+	}
+
+	emmap = task_resource_mmap(task_kernel_task());
+	mmu_set_context(emmap->ctx);
+
+	mmu_on();
+
+	return 0;
+}

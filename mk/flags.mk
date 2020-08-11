@@ -7,19 +7,30 @@ CPPFLAGS ?=
 ASFLAGS ?=
 ARFLAGS ?=
 LDFLAGS ?=
+COMPILER ?=
+BUILD_DEPS_CPPFLAGS ?=
+BUILD_DEPS_LDFLAGS ?=
 
 CROSS_COMPILE ?=
+CXX     ?= $(CROSS_COMPILE)g++
+AR      ?= $(CROSS_COMPILE)ar
+AS      ?= $(CROSS_COMPILE)as
+LD      ?= $(CROSS_COMPILE)ld
+NM      ?= $(CROSS_COMPILE)nm
+OBJDUMP ?= $(CROSS_COMPILE)objdump
+OBJCOPY ?= $(CROSS_COMPILE)objcopy
+SIZE    ?= $(CROSS_COMPILE)size
 
-CC      := $(CROSS_COMPILE)gcc
-CPP     := $(CC) -E
-CXX     := $(CROSS_COMPILE)g++
-AR      := $(CROSS_COMPILE)ar
-AS      := $(CROSS_COMPILE)as
-LD      := $(CROSS_COMPILE)ld
-NM      := $(CROSS_COMPILE)nm
-OBJDUMP := $(CROSS_COMPILE)objdump
-OBJCOPY := $(CROSS_COMPILE)objcopy
-SIZE    := $(CROSS_COMPILE)size
+ifeq ($(COMPILER),clang)
+CC      ?= clang
+# for clang LIBGCC_FINDER will be set externally to arm-none-eabi-gcc or something like that
+else
+CC      ?= $(CROSS_COMPILE)gcc
+LIBGCC_FINDER=$(CC) $(CFLAGS)
+endif
+CPP     ?= $(CC) -E
+
+CPPFLAGS += -D__EMBOX_VERSION__=\"$(EMBOX_VERSION)\"
 
 comma_sep_list = $(subst $(\s),$(,),$(strip $1))
 
@@ -75,6 +86,7 @@ EXTERNAL_MAKE_FLAGS = \
 			PLATFORM_DIR \
 			SUBPLATFORM_TEMPLATE_DIR \
 			EXTERNAL_BUILD_DIR \
+			LOADABLE_DIR \
 			DOC_DIR \
 			BIN_DIR \
 			OBJ_DIR \
@@ -90,6 +102,7 @@ EXTERNAL_MAKE_FLAGS = \
 			CACHE_DIR, \
 		$(path_var)=$(abspath $($(path_var)))) \
 	BUILD_DIR=$(abspath $(mod_build_dir)) \
+	COMPILER=$(COMPILER) \
 	EMBOX_ARCH='$(ARCH)' \
 	EMBOX_CROSS_COMPILE='$(CROSS_COMPILE)' \
 	EMBOX_MAKEFLAGS='$(MAKEFLAGS)' \
@@ -103,6 +116,12 @@ EXTERNAL_MAKE_FLAGS = \
 mod_build_dir = $(EXTERNAL_BUILD_DIR)/$(mod_path)
 
 EXTERNAL_OBJ_DIR =^BUILD/extbld/^MOD_PATH#
+
+LOADABLE_MAKE = \
+	$(MAKE) \
+	-C $(dir $(my_file)) \
+	-f $(EMBOX_ROOT_DIR)/mk/script/loadable-build.mk \
+	$(EXTERNAL_MAKE_FLAGS)
 
 ifneq ($(patsubst N,0,$(patsubst n,0,$(or $(value NDEBUG),0))),0)
 override CPPFLAGS += -DNDEBUG
@@ -143,8 +162,7 @@ cppflags_fn = \
 	-U__linux__ -Ulinux -U__linux \
 	-D__EMBOX__ \
 	-D__unix \
-	-D"__impl_x(path)=<../path>" \
-	-imacros $(call $1,$(AUTOCONF_DIR))/config.h \
+	-imacros $(call $1,$(AUTOCONF_DIR))/config.lds.h \
 	-I$(call $1,$(INCUDE_INSTALL_DIR)) \
 	-I$(call $1,$(SRC_DIR))/include \
 	-I$(call $1,$(SRC_DIR))/arch/$(ARCH)/include \
@@ -155,6 +173,7 @@ cppflags_fn = \
 	-I$(call $1,$(SRC_DIR))/compat/linux/include \
 	-I$(call $1,$(SRC_DIR))/compat/posix/include \
 	-I$(call $1,$(SRC_DIR))/compat/libc/include \
+	-I$(abspath $(SRC_DIR)/compat/cxx/include) \
 	-nostdinc \
 	-MMD -MP# -MT $@ -MF $(@:.o=.d)
 
@@ -177,8 +196,22 @@ override ASFLAGS += $(asflags)
 
 override COMMON_CCFLAGS := $(COMMON_FLAGS)
 override COMMON_CCFLAGS += -fno-strict-aliasing -fno-common
+override COMMON_CCFLAGS += -fno-stack-protector
 override COMMON_CCFLAGS += -Wall -Werror
 override COMMON_CCFLAGS += -Wundef -Wno-trigraphs -Wno-char-subscripts
+
+ifeq ($(COMPILER),clang)
+	override COMMON_CCFLAGS += -Wno-gnu-designator
+else
+	override GCC_VERSION := $(word 3,$(shell $(CC) --version 2>&1 | grep -e "^gcc"))
+	override GCC_VERSION_MAJOR := $(word 1,$(subst ., ,$(GCC_VERSION)))
+
+ifeq ($(GCC_VERSION_MAJOR),7)
+	override COMMON_CCFLAGS += -Wno-error=format-truncation=
+	override COMMON_CCFLAGS += -Wno-error=alloc-size-larger-than=
+endif
+endif
+
 override COMMON_CCFLAGS += -Wformat
 
 cxxflags := $(CXXFLAGS)
@@ -186,10 +219,11 @@ override CXXFLAGS = $(COMMON_CCFLAGS)
 #override CXXFLAGS += -fno-rtti
 #override CXXFLAGS += -fno-exceptions
 #override CXXFLAGS += -fno-threadsafe-statics
-override CXXFLAGS += -I$(SRC_DIR)/compat/cxx/include
+override CXXFLAGS += -I$(abspath $(SRC_DIR)/compat/cxx/include)
 #	C++ has build-in type bool
 override CXXFLAGS += -DSTDBOOL_H_
 override CXXFLAGS += $(cxxflags)
+override CXXFLAGS += -std=gnu++11
 
 # Compiler flags
 cflags := $(CFLAGS)
@@ -197,6 +231,21 @@ override CFLAGS  = $(COMMON_CCFLAGS)
 override CFLAGS += -std=gnu99
 #override CFLAGS += -fexceptions
 override CFLAGS += $(cflags)
+
+ifneq ($(COMPILER),clang)
+ifneq ($(COMPILER),lcc)
+	# Not clang nor lcc means gcc
+	# This option conflicts with some third-party stuff, so we disable it.
+	override CFLAGS += -Wno-misleading-indentation
+
+	# GCC 6 seems to have many library functions declared as __nonnull__, like
+	# fread, fwrite, fprintf, ...  Since accessing NULL in embox without MMU
+	# support could cause real damage to whole system in contrast with segfault of
+	# application, we decided to keep explicit null checks and disable the warning.
+	override CFLAGS += -Wno-nonnull-compare
+endif
+endif
+
 
 # Linker flags
 ldflags := $(LDFLAGS)
@@ -210,4 +259,3 @@ CCFLAGS ?=
 
 INCLUDES_FROM_FLAGS := \
 	$(patsubst -I%,%,$(filter -I%,$(CPPFLAGS) $(CXXFLAGS)))
-

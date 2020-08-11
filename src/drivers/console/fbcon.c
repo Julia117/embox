@@ -10,6 +10,10 @@
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <sys/uio.h>
+#include <fcntl.h>
+
 #include <drivers/input/keymap.h>
 #include <drivers/keyboard.h>
 #include <drivers/console/mpx.h>
@@ -17,6 +21,7 @@
 #include <drivers/video/fb.h>
 #include <drivers/video/font.h>
 #include <drivers/tty.h>
+#include <drivers/char_dev.h>
 #include <fs/index_descriptor.h>
 #include <kernel/sched/sched_lock.h>
 #include <kernel/task.h>
@@ -71,10 +76,15 @@ static struct fbcon *fbcon_current;
 
 static void visd(struct vc *vc, struct fb_info *fbinfo) {
 	struct fbcon *fbcon = (struct fbcon *) vc;
+	struct fb_var_screeninfo var;
 
-	fbcon->resbpp.x = fbinfo->var.xres;
-	fbcon->resbpp.y = fbinfo->var.yres;
-	fbcon->resbpp.bpp = fbinfo->var.bits_per_pixel;
+	if (0 != fb_get_var(fbinfo, &var)) {
+		return;
+	}
+
+	fbcon->resbpp.x = var.xres;
+	fbcon->resbpp.y = var.yres;
+	fbcon->resbpp.bpp = var.bits_per_pixel;
 
 	vterm_reinit(&fbcon->vterm_video, fbcon->resbpp.x / fbcon_displ_data.font->width,
 		       	fbcon->resbpp.y / fbcon_displ_data.font->height);
@@ -96,36 +106,40 @@ static inline struct fbcon *data2fbcon(struct idesc *idesc) {
 	return member_cast_out(idesc, struct fbcon, idesc);
 }
 
-static ssize_t fbcon_idesc_read(struct idesc *idesc, void *buf, size_t nbyte) {
+static ssize_t fbcon_idesc_read(struct idesc *idesc, const struct iovec *iov, int cnt) {
+	void *buf;
+	size_t nbyte;
 	struct fbcon *fbcon = data2fbcon(idesc);
+
+	assert(iov);
+	buf = iov->iov_base;
+	assert(cnt == 1);
+	nbyte = iov->iov_len;
 
 	return tty_read(&fbcon->vterm.tty, buf, nbyte);
 }
 
-static ssize_t fbcon_idesc_write(struct idesc *idesc, const void *buf, size_t nbyte) {
+static ssize_t fbcon_idesc_write(struct idesc *idesc, const struct iovec *iov, int cnt) {
 	struct fbcon *fbcon = data2fbcon(idesc);
-	char *cbuf = (char *) buf;
+	char *cbuf;
+	size_t nbyte;
+
+	assert(iov);
+	cbuf = iov->iov_base;
+	assert(cnt == 1);
+	nbyte = iov->iov_len;
 
 	while (nbyte--) {
 		vterm_putc(&fbcon->vterm, *cbuf++);
 	}
 
-	return (ssize_t)((uintptr_t)cbuf - (uintptr_t)buf);
+	return (ssize_t)((uintptr_t)cbuf - (uintptr_t)iov->iov_base);
 }
 
 static int fbcon_idesc_ioctl(struct idesc *idesc, int request, void *data) {
 	struct fbcon *fbcon = data2fbcon(idesc);
 
 	return tty_ioctl(&(fbcon->vterm.tty), request, data);
-}
-
-static int fbcon_idesc_fstat(struct idesc *idesc, void *buff) {
-       struct stat *st = buff;
-
-       st->st_mode = S_IFCHR;
-
-       return 0;
-
 }
 
 static int fbcon_idesc_status(struct idesc *idesc, int mask) {
@@ -138,11 +152,11 @@ static void fbcon_idesc_close(struct idesc *idesc) {
 }
 
 static const struct idesc_ops fbcon_idesc_ops = {
-	.read   = fbcon_idesc_read,
-	.write  = fbcon_idesc_write,
+	.id_readv   = fbcon_idesc_read,
+	.id_writev  = fbcon_idesc_write,
 	.close  = fbcon_idesc_close,
 	.ioctl  = fbcon_idesc_ioctl,
-	.fstat  = fbcon_idesc_fstat,
+	.fstat  = char_dev_idesc_fstat,
 	.status = fbcon_idesc_status,
 };
 
@@ -161,7 +175,7 @@ static void *run(void *data) {
 	close(1);
 	close(2);
 
-	idesc_init(&fbcon->idesc, &fbcon_idesc_ops, FS_MAY_READ | FS_MAY_WRITE);
+	idesc_init(&fbcon->idesc, &fbcon_idesc_ops, O_RDWR);
 	fd = index_descriptor_add(&fbcon->idesc);
 	fbcon->vterm.tty.idesc = &fbcon->idesc;
 
@@ -204,17 +218,15 @@ static void fbcon_vterm_cursor(struct vterm_video *t, unsigned short x, unsigned
 	if (!fb) {
 		return;
 	}
-	assert(fb->ops != NULL);
-	assert(fb->ops->fb_cursor != NULL);
 
 	if (prev_y >= 0) {
-		fb->ops->fb_cursor(fb, &cursor);
+		fb_cursor(fb, &cursor);
 	}
 
 	prev_x = cursor.hot.x = x;
 	prev_y = cursor.hot.y = y;
 
-	fb->ops->fb_cursor(fb, &cursor);
+	fb_cursor(fb, &cursor);
 
 }
 
@@ -246,9 +258,7 @@ static void fbcon_vterm_putc(struct vterm_video *t, char ch, unsigned short x, u
 		prev_x = prev_y = -1;
 	}
 
-	assert(fb->ops != NULL);
-	assert(fb->ops->fb_imageblit != NULL);
-	fb->ops->fb_imageblit(fb, &symbol);
+	fb_imageblit(fb, &symbol);
 }
 
 
@@ -273,9 +283,7 @@ static void fbcon_vterm_clear_rows(struct vterm_video *t, short row, unsigned sh
 	if (!fb) {
 		return;
 	}
-	assert(fb->ops != NULL);
-	assert(fb->ops->fb_fillrect != NULL);
-	fb->ops->fb_fillrect(fb, &rect);
+	fb_fillrect(fb, &rect);
 
 	if (prev_y >= row && prev_y < row + count) {
 		prev_y = prev_x = -1;
@@ -305,9 +313,7 @@ static void fbcon_vterm_copy_rows(struct vterm_video *t,
 		return;
 	}
 
-	assert(fb->ops != NULL);
-	assert(fb->ops->fb_copyarea != NULL);
-	fb->ops->fb_copyarea(fb, &area);
+	fb_copyarea(fb, &area);
 
 	if (prev_y >= from && prev_y < from + nrows) {
 		prev_y -= from - to;
@@ -376,7 +382,7 @@ static void fbcon_diag_putc(const struct diag *diag, char ch) {
 	vterm_putc(&fbcon_current->vterm, ch);
 }
 
-DIAG_OPS_DECLARE(
+DIAG_OPS_DEF(
 	.putc = fbcon_diag_putc,
 );
 
@@ -385,6 +391,6 @@ static int fbcon_init(void) {
 	make_task(0, true);
 	make_task(1, true);
 
-	return diag_setup(&DIAG_IMPL_NAME(__EMBUILD_MOD__));
-	/*return 0;*/
+	/*return diag_setup(&DIAG_IMPL_NAME(__EMBUILD_MOD__));*/
+	return 0;
 }
