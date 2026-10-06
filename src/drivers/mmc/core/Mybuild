@@ -1,0 +1,27 @@
+package embox.driver.mmc
+
+module mmc_core {
+	option number dev_quantity = 64
+	option string log_level="LOG_ERR"
+	option number bus_width=0 /* 1 bit width */
+
+	@IncludeExport(path="drivers/mmc")
+	source "mmc_core.h"
+	@IncludeExport(path="drivers/mmc")
+	source "mmc_card.h"
+	@IncludeExport(path="drivers/mmc")
+	source "mmc_host.h"
+	@IncludeExport(path="drivers/mmc")
+	source "mmc.h"
+
+	source "mmc_host.c"
+
+	source "sd_cmd.h"
+
+	/* Following files contain version-specific stuff */
+	source "sdio.c"
+	source "sd.c"
+	source "mmc.c"
+
+	depends embox.driver.block.partition
+}

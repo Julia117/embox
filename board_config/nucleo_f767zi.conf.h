@@ -1,0 +1,223 @@
+#include <gen_board_conf.h>
+#include <stm32.h>
+
+struct uart_conf uarts[] = {
+	[2] = {
+		.status = DISABLED,
+		.name = "USART2",
+		.dev = {
+			.name = "USART2",
+			.irqs = {
+				VAL("", 38),
+			},
+			.pins = {
+				PIN("TX", GPIO_PORT_A, 2, GPIO_MODE_ALT, AF7),
+				PIN("RX", GPIO_PORT_A, 3, GPIO_MODE_ALT, AF7),
+			},
+			.clocks = {
+				VAL("UART", CLK_USART2),
+			}
+		},
+		.baudrate = 115200,
+	},
+	[3] = {
+		.status = ENABLED,
+		.name = "USART3",
+		.dev = {
+			.name = "USART3",
+			.irqs = {
+				VAL("", 39),
+			},
+			.pins = {
+				PIN("TX", GPIO_PORT_D, 8, GPIO_MODE_ALT, AF7),
+				PIN("RX", GPIO_PORT_D, 9, GPIO_MODE_ALT, AF7),
+			},
+			.clocks = {
+				VAL("UART", CLK_USART3),
+			}
+		},
+		.baudrate = 115200,
+	},
+	[6] = {
+		.status = DISABLED,
+		.name = "USART6",
+		.dev = {
+			.name = "USART6",
+			.irqs = {
+				VAL("", 71),
+			},
+			.pins = {
+				PIN("TX", GPIO_PORT_C, 6, GPIO_MODE_ALT, AF8),
+				PIN("RX", GPIO_PORT_C, 7, GPIO_MODE_ALT, AF8),
+			},
+			.clocks = {
+				VAL("UART", CLK_USART6),
+			}
+		},
+		.baudrate = 115200,
+	},
+};
+
+struct spi_conf spis[] = {
+	[1] = {
+		.status = DISABLED,
+		.name = "SPI1",
+		.dev = {
+			.name = "SPI1",
+			.pins = {
+				PIN("SCK",  GPIO_PORT_A, 5, GPIO_MODE_ALT, AF5),
+				PIN("MISO", GPIO_PORT_A, 6, GPIO_MODE_ALT, AF5),
+				PIN("MOSI", GPIO_PORT_B, 5, GPIO_MODE_ALT, AF5),	// PA7
+				PIN("CS",   GPIO_PORT_A, 4, GPIO_MODE_OUT, NOAF),
+			},
+			.clocks = {
+				VAL("SPI",  CLK_SPI1),
+			}
+		},
+		.spi_devs[0] = {
+			.status = ENABLED,
+			.name = "SPI1_0",
+			.bits_per_word = 8,
+			.bus_num = 1,
+			.idx     = 0,
+			.dev = {
+				.name = "SPI1_0",
+				.pins = {
+					PIN("CS",   GPIO_PORT_A, 4, GPIO_MODE_OUT, NOAF),
+				},
+			},
+		},
+	},
+	[2] = {
+		.status = DISABLED,
+		.name = "SPI2",
+		.dev = {
+			.name = "SPI2",
+			.pins = {
+				PIN("SCK",  GPIO_PORT_B, 13, GPIO_MODE_ALT, AF5),
+				PIN("MISO", GPIO_PORT_B, 14, GPIO_MODE_ALT, AF5),
+				PIN("MOSI", GPIO_PORT_B, 15, GPIO_MODE_ALT, AF5),
+				PIN("CS",   GPIO_PORT_B, 12, GPIO_MODE_OUT, NOAF),
+			},
+			.clocks = {
+				VAL("SPI",  CLK_SPI2),
+			}
+		},
+		.spi_devs[0] = {
+			.status = ENABLED,
+			.name = "SPI2_0",
+			.bits_per_word = 8,
+			.bus_num = 2,
+			.idx     = 0,
+			.dev = {
+				.name = "SPI2_0",
+				.pins = {
+					PIN("CS",   GPIO_PORT_B, 12, GPIO_MODE_OUT, NOAF),
+				},
+			},
+		},
+	},
+};
+
+struct i2c_conf i2cs[] = {
+	[1] = {
+		.status = ENABLED,
+		.name = "I2C1",
+		.dev = {
+			.name = "I2C1",
+			.regs = {
+				REGMAP("BASE", (I2C1_BASE), 0x100),
+			},
+			.irqs = {
+				VAL("EVENT", 31),
+				VAL("ERROR", 32),
+			},
+			.pins = {
+				PIN("SCL", GPIO_PORT_B, 8, GPIO_MODE_ALT, AF4),
+				PIN("SDA", GPIO_PORT_B, 9, GPIO_MODE_ALT, AF4),
+			},
+			.clocks = {
+				VAL("I2C", CLK_I2C1),
+			}
+		},
+	},
+	[2] = {
+		.status = DISABLED,
+		.name = "I2C2",
+		.dev = {
+			.name = "I2C2",
+			.regs = {
+				REGMAP("BASE", (I2C2_BASE), 0x100),
+			},
+			.irqs = {
+				VAL("EVENT", 33),
+				VAL("ERROR", 34),
+			},
+			.pins = {
+				PIN("SCL", GPIO_PORT_B, 10, GPIO_MODE_ALT, AF4),
+				PIN("SDA", GPIO_PORT_B, 11, GPIO_MODE_ALT, AF4),
+			},
+			.clocks = {
+				VAL("I2C", CLK_I2C2),
+			}
+		},
+	},
+
+};
+
+struct led_conf leds[] = {
+	[0] = {
+		.status = ENABLED,
+		.name = "LED1",
+		.port = VAL("", GPIO_PORT_B),
+		.pin = VAL("", 0),
+		.level = VAL("", GPIO_PIN_HIGH),
+	},
+	[1] = {
+		.status = ENABLED,
+		.name = "LED2",
+		.port = VAL("", GPIO_PORT_B),
+		.pin = VAL("", 7),
+		.level = VAL("", GPIO_PIN_HIGH),
+	},
+	[2] = {
+		.status = ENABLED,
+		.name = "LED3",
+		.port = VAL("", GPIO_PORT_B),
+		.pin = VAL("", 14),
+		.level = VAL("", GPIO_PIN_HIGH),
+	},
+};
+
+struct usb_conf usbs[] = {
+	[0] = {
+		.status = ENABLED,
+		.dev = {
+			.name = "USB_OTG",
+			.regs = {
+				REGMAP("BASE", (USB_OTG_FS_PERIPH_BASE), 0x100),
+			},
+			.irqs = {
+				VAL("", 67), /* OTG_FS_IRQn */
+			},
+			.pins = {
+				PIN("VBUS", GPIO_PORT_A,  9, GPIO_MODE_INPUT, 0),
+				PIN("DM",  GPIO_PORT_A,  11, GPIO_MODE_ALT, 10),
+				PIN("DP",  GPIO_PORT_A,  12, GPIO_MODE_ALT, 10),
+				PIN("ID", GPIO_PORT_A, 10, GPIO_MODE_ALT | GPIO_MODE_IN_PULL_UP | GPIO_MODE_OUT_OPEN_DRAIN, 10),
+			},
+			.clocks = {
+				VAL("USB", STM32_CLK_ENABLE(USB_OTG_FS)),			
+			},
+			.misc = {
+				VAL("TYPE_FS", 1),
+				VAL("PHY_ITFACE", PCD_PHY_EMBEDDED),
+				VAL("SPEED", PCD_SPEED_FULL),
+				VAL("EP_MAX", 6),
+				VAL("EP_MAX_SIZE", 64),
+			},
+		},
+	},
+};
+
+EXPORT_CONFIG(UART(uarts), SPI(spis), LED(leds), USB(usbs), I2C(i2cs))

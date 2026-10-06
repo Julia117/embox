@@ -1,0 +1,8 @@
+package embox.driver.servo
+
+module servo {
+	source "servo.c"
+
+	@IncludeExport(path="drivers/servo")
+	source "servo.h"
+}

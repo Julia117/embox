@@ -1,0 +1,17 @@
+/**
+ * @file
+ * @brief C++ forwarding header
+ * @date 04.07.12
+ * @author Ilia Vaprol
+ */
+
+#ifndef LIBCXX_STANDALONE_CSTDARG_
+#define LIBCXX_STANDALONE_CSTDARG_
+
+#include <stdarg.h>
+
+namespace std {
+	using ::va_list;
+} // namespace std
+
+#endif // LIBCXX_STANDALONE_CSTDARG_

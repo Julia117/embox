@@ -12,14 +12,10 @@
 
 EMBOX_UNIT_INIT(kernel_task_init);
 
-static struct task kernel_task __attribute__((section(".bss.ktask")));
+static struct task kernel_task __attribute__((section(".bss.embox.ktask")));
 
 struct task * task_kernel_task(void) {
 	return &kernel_task;
-}
-
-int __attribute__((weak)) mmap_kernel_init(void) {
-	return 0;
 }
 
 static int kernel_task_init(void) {
@@ -34,13 +30,14 @@ static int kernel_task_init(void) {
 		return ktask_id;
 	}
 
-	/* task_get_main returns a value which already initialized
-	 * by thread.core module in the file idle_thread.c by the
-	 * idle_thread_create() function */
+	/**
+	 * since kernel_task module is initialized earlier than sched.sched module
+	 * which calls task_set_main() in boot_thread.c, so task_get_main(ktask)
+	 * will return a NULL. This will leave job of connecting task and thread
+	 * to boot_thread_create() function
+	 */
 	task_init(ktask, ktask_id, NULL, "kernel", task_get_main(ktask),
 			TASK_PRIORITY_DEFAULT);
-
-	mmap_kernel_init();
 
 	return 0;
 }

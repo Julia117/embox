@@ -21,6 +21,10 @@ MAKEFLAGS += --no-builtin-variables
 MAKEFLAGS += --no-print-directory
 MAKEFLAGS += --warn-undefined-variables
 
+# Avoids "undefined variable" warning when using --no-builtin-variables
+# and --warn-undefined-variables options in GNU Make 4.4.
+export GNUMAKEFLAGS :=
+
 # Fixup for case when prompt contains dollar signs.
 # Avoids bogus 'undefined variable' warnings.
 export PS1 :=
@@ -34,5 +38,11 @@ export PS1 :=
 
 .PHONY : $(sort all $(MAKECMDGOALS))
 $(sort all $(MAKECMDGOALS)) :
-	@$(MAKE) -C $(dir $(lastword $(MAKEFILE_LIST))) -f mk/main.mk $@
+
+# To account for upper limit on stack size in Mac OS X
+ifneq ($(shell uname -s), Darwin) 
+	@ulimit -s 65536 && $(MAKE) -C $(dir $(lastword $(MAKEFILE_LIST))) -f mk/main.mk $@
+else
+	@ulimit -s $(shell ulimit -Hs) && $(MAKE) -C $(dir $(lastword $(MAKEFILE_LIST))) -f mk/main.mk $@
+endif
 

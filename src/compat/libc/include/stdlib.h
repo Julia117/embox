@@ -11,32 +11,39 @@
  *          - Docs
  */
 
-#ifndef STDLIB_H_
-#define STDLIB_H_
+#ifndef COMPAT_LIBC_STDLIB_H_
+#define COMPAT_LIBC_STDLIB_H_
 
-#include <defines/size_t.h>
-#include <defines/wchar_t.h>
-#include <defines/null.h>
+#include <compiler.h>
+#include <limits.h>
+#include <stddef.h>
+#include <sys/cdefs.h>
 
 /* In addition, the following symbolic names and macros shall be defined as in
  * <sys/wait.h> , for use in decoding the return value from system():
  */
 #include <sys/wait.h>
-#include <limits.h>
+
+/* For compatibility with Linux */
+#include <alloca.h>
 
 typedef struct ldiv {
-   long int quot;
-   long int rem;
+	long int quot;
+	long int rem;
 } ldiv_t;
 
+typedef struct lldiv {
+	long long int quot;
+	long long int rem;
+} lldiv_t;
+
 typedef struct div {
-   int quot;
-   int rem;
+	int quot;
+	int rem;
 } div_t;
 
 #define RAND_MAX INT_MAX
 
-#include <sys/cdefs.h>
 __BEGIN_DECLS
 
 /**
@@ -68,14 +75,28 @@ __BEGIN_DECLS
  *   @a base.
  */
 extern long int strtol(const char *nptr, char **endptr, int base);
-
 extern unsigned long int strtoul(const char *nptr, char **endptr, int base);
-
-extern double strtod(const char *nptr, char **endptr);
-
-extern unsigned long long int strtoull(const char *nptr, char **endptr, int base);
-
 extern long long int strtoll(const char *nptr, char **endptr, int base);
+extern unsigned long long int strtoull(const char *nptr, char **endptr, int base);
+extern float strtof(const char *nptr, char **endptr);
+extern double strtod(const char *nptr, char **endptr);
+extern long double strtold(const char *nptr, char **endptr);
+
+#define strtol_l(nptr, endptr, base, loc)   strtol(nptr, endptr, base)
+#define strtoul_l(nptr, endptr, base, loc)  strtoul(nptr, endptr, base)
+#define strtoll_l(nptr, endptr, base, loc)  strtoll(nptr, endptr, base)
+#define strtoull_l(nptr, endptr, base, loc) strtoull(nptr, endptr, base)
+#define strtof_l(nptr, endptr, loc)         strtof(nptr, endptr)
+#define strtod_l(nptr, endptr, loc)         strtod(nptr, endptr)
+#define strtold_l(nptr, endptr, loc)        strtold(nptr, endptr)
+
+extern double atof(const char *nptr);
+extern int atoi(const char *nptr);
+extern long atol(const char *nptr);
+static inline long long atoll(const char *nptr) {
+	return strtoll(nptr, 0, 10);
+}
+extern long long atoq(const char *nptr);
 
 /**
  * Convert integer to string.
@@ -86,7 +107,7 @@ extern long long int strtoll(const char *nptr, char **endptr, int base);
  * @param base Base for the conversion. 1 < base < 37.
  * @return Pointer to buf.
  */
-extern char *itoa( int num, char *buf, unsigned short int base );
+extern char *itoa(int num, char *buf, unsigned short int base);
 
 /* Allocate and free dynamic memory */
 extern void *calloc(size_t nmemb, size_t size);
@@ -94,25 +115,21 @@ extern void *malloc(size_t size);
 extern void free(void *ptr);
 extern void *realloc(void *ptr, size_t size);
 extern void *memalign(size_t boundary, size_t size);
-
+extern int posix_memalign(void **memptr, size_t alignment, size_t size);
 
 extern void qsort(void *base, size_t nmemb, size_t size,
-		int(*compar)(const void *, const void *));
+    int (*compar)(const void *, const void *));
 
-extern void *bsearch(const void *key, const void *base,
-              size_t nmemb, size_t size,
-              int (*compar)(const void *, const void *));
+extern void *bsearch(const void *key, const void *base, size_t nmemb,
+    size_t size, int (*compar)(const void *, const void *));
 
 /** Find the smallest element, greater or equals to specified. */
-extern void *lower_bound(const void *key, const void *base,
-              size_t nmemb, size_t size,
-              int (*compar)(const void *, const void *));
+extern void *lower_bound(const void *key, const void *base, size_t nmemb,
+    size_t size, int (*compar)(const void *, const void *));
 
 /** Find the smallest element, strictly greater than specified. */
-extern void *upper_bound(const void *key, const void *base,
-              size_t nmemb, size_t size,
-              int (*compar)(const void *, const void *));
-
+extern void *upper_bound(const void *key, const void *base, size_t nmemb,
+    size_t size, int (*compar)(const void *, const void *));
 
 extern int rand(void);
 extern int rand_r(unsigned int *seedp);
@@ -125,37 +142,26 @@ extern char *setstate(char *state);
 
 /* glibc extention */
 #include <stdint.h>
-struct random_data
-  {
-    int32_t *fptr;		/* Front pointer.  */
-    int32_t *rptr;		/* Rear pointer.  */
-    int32_t *state;		/* Array of state values.  */
-    int rand_type;		/* Type of random number generator.  */
-    int rand_deg;		/* Degree of random number generator.  */
-    int rand_sep;		/* Distance between front and rear.  */
-    int32_t *end_ptr;		/* Pointer behind state table.  */
-  };
+struct random_data {
+	int32_t *fptr;    /* Front pointer.  */
+	int32_t *rptr;    /* Rear pointer.  */
+	int32_t *state;   /* Array of state values.  */
+	int rand_type;    /* Type of random number generator.  */
+	int rand_deg;     /* Degree of random number generator.  */
+	int rand_sep;     /* Distance between front and rear.  */
+	int32_t *end_ptr; /* Pointer behind state table.  */
+};
 
 extern int random_r(struct random_data *buf, int32_t *result);
 extern int srandom_r(unsigned int seed, struct random_data *buf);
-extern int initstate_r(unsigned int seed, char *statebuf,
-                       size_t statelen, struct random_data *buf);
+extern int initstate_r(unsigned int seed, char *statebuf, size_t statelen,
+    struct random_data *buf);
 extern int setstate_r(char *statebuf, struct random_data *buf);
 
+extern lldiv_t lldiv(long long num, long long denom);
 extern ldiv_t ldiv(long num, long denom);
 extern div_t div(int num, int denom);
 
-//FIXME atof atoi and so on
-extern double atof(const char *nptr);
-extern int atoi(const char *nptr);
-extern long atol(const char *nptr);
-static inline long long atoll(const char *nptr) {
-	return strtoll(nptr, 0, 10);
-}
-extern long long atoq(const char *nptr);
-extern double strtod(const char *nptr, char **endptr);
-extern float strtof(const char *nptr, char **endptr);
-extern long double strtold(const char *nptr, char **endptr);
 extern void abort(void);
 
 /* Integer expression whose value is the maximum number of bytes in a character
@@ -166,8 +172,17 @@ extern void abort(void);
 
 #define EXIT_FAILURE 1
 #define EXIT_SUCCESS 0
-extern void exit(int status) __attribute__ ((__noreturn__));
+extern void _NORETURN exit(int status);
+/* _Exit() is equivalent to _exit() but defined here in stdlib.h. */
+extern void _NORETURN _Exit(int status);
 
+#ifdef __GNUC__
+#if __GNUC__ > 4 || (__GNUC__ == 4 && (__GNUC_MINOR__ > 5))
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+#endif /* __GNUC__ > 4 || (__GNUC__ == 4 && (__GNUC_MINOR__ > 5 )) */
+#endif /*__GNUC__ */
 /**
  * Returns the absolute value of an argument. If the argument is not negative,
  * the argument is returned. If the argument is negative, the negation of the
@@ -177,31 +192,61 @@ extern void exit(int status) __attribute__ ((__noreturn__));
  *
  * @return the absolute value of the argument
  */
-static inline int abs(int x) { return x < 0 ? -x : x; } // TODO move from here
-static inline long labs(long x) { return x < 0 ? -x : x; }
+static inline int abs(int x) {
+	return x < 0 ? -x : x;
+}
+static inline long labs(long x) {
+	return x < 0 ? -x : x;
+}
+static inline long long int llabs(long long int x) {
+	return x < 0 ? -x : x;
+}
+#ifdef __GNUC__
+#if __GNUC__ > 4 || (__GNUC__ == 4 && (__GNUC_MINOR__ > 5))
 
+#pragma GCC diagnostic pop
 
-extern char * getenv(const char *name);
+#endif /* __GNUC__ > 4 || (__GNUC__ == 4 && (__GNUC_MINOR__ > 5 )) */
+#endif /*__GNUC__ */
+
+extern char *getenv(const char *name);
 extern int putenv(char *string);
 extern int setenv(const char *envname, const char *envval, int overwrite);
 extern int unsetenv(const char *name);
 extern int clearenv(void);
 extern int system(const char *command);
 
-static inline int mkstemp(char *path_template) {
-	(void)path_template;
-	return -1;
-}
-static inline int mbtowc(wchar_t *pwc, const char *s, size_t n) {
-	(void)pwc; (void)s; (void)n;
-	return 0;
-}
-static inline int wctomb(char *s, wchar_t wchar) {
-	(void)s;
-	(void)wchar;
-	return 0;
-}
+extern int mkstemp(char *path_template);
+extern int mkstemps(char *path_template, int suffixlen);
+
+extern char *realpath(const char *file_name, char *resolved_name);
+
+extern int mbtowc(wchar_t *out, const char *in, size_t n);
+extern int wctomb(char *out, const wchar_t *in);
+
+extern int mblen(const char *str, size_t max);
+
+extern int atexit(void (*func)(void));
+
+extern size_t mbstowcs(wchar_t *wcstring, const char *mbstring, size_t n);
+extern size_t wcstombs(char *mbstr, const wchar_t *wcstr, size_t max);
+
+extern char *gcvt(double number, size_t ndigit, char *buf);
+
+/* stubs*/
+extern int heapsort(void *base, size_t nmemb, size_t size,
+	int (*compar)(const void *, const void *));
+
+extern void *aligned_alloc(size_t alignment, size_t size);
+
+extern int mergesort(void *base, size_t nel, size_t width,
+              int (*compar)(const void *, const void *));
+
+/* _BSD_SOURCE */
+extern int radixsort (const unsigned char **base, int nmemb,
+	const unsigned char *table, unsigned endbyte);
+// extern int sradixsort (const unsigned char **base int nmemb const unsigned char *table unsigned endbyte);
 
 __END_DECLS
 
-#endif /* STDLIB_H_ */
+#endif /* COMPAT_LIBC_STDLIB_H_ */

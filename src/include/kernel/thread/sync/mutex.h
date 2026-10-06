@@ -14,14 +14,17 @@
 #include <sys/cdefs.h>
 #include <errno.h>
 
+#include <lib/libds/dlist.h>
+
 #include <kernel/sched/waitq.h>
 #include <kernel/sched/sync/mutex.h>
 
+struct timespec;
 
 #define MUTEX_INIT_STATIC \
 	{                                                  \
 		{ /* wait_queue init */                        \
-			{/* dlist_init*/ (uintptr_t)NULL, NULL, NULL, NULL},     \
+			DLIST_INIT_NULL(),                         \
 			/* spinlock_t lock*/                       \
 			{ /*l*/__SPIN_UNLOCKED,                    \
 				/* owner */ (unsigned int)-1,		\
@@ -38,7 +41,7 @@
 #define RMUTEX_INIT_STATIC \
 	{                                                  \
 		{ /* wait_queue init */                        \
-			{/* dlist_init*/ (uintptr_t)NULL, NULL, NULL, NULL},     \
+			DLIST_INIT_NULL(),                         \
 			/* spinlock_t lock*/                       \
 			{ /*l*/__SPIN_UNLOCKED,                    \
 				/* owner */ -1,                        \
@@ -52,7 +55,25 @@
 		/* lock_couunt */ 0 \
 	}
 
-#define MUTEX_INIT(m)  {.wq=WAITQ_INIT(m.wq), .holder=NULL, .lock_count=0}
+#define MUTEX_INIT(m)                \
+	{                                \
+	    .wq = WAITQ_INIT(m.wq),      \
+	    .holder = NULL,              \
+	    .lock_count = 0,             \
+	    .attr = {                    \
+	        .type = MUTEX_DEFAULT,   \
+	    },                           \
+	}
+
+#define RMUTEX_INIT(m)               \
+	{                                \
+	    .wq = WAITQ_INIT(m.wq),      \
+	    .holder = NULL,              \
+	    .lock_count = 0,             \
+	    .attr = {                    \
+	        .type = MUTEX_RECURSIVE, \
+	    },                           \
+	}
 
 __BEGIN_DECLS
 
@@ -78,6 +99,8 @@ extern void mutex_init(struct mutex *mutex);
  * @param free_mutex Mutex to lock.
  */
 extern int mutex_lock(struct mutex *free_mutex);
+
+extern int mutex_timedlock(struct mutex *m, const struct timespec *abstime);
 
 /**
  * Unleashes the mutex from lock and unbinds it, if lockscount

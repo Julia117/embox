@@ -5,11 +5,11 @@ endif
 
 AT=
 
-ZEROMQ_CMAKE_DIR = $(BUILD_DIR)/cmake
-ZEROMQ_LIB       = $(BUILD_DIR)/lib/libzeromq.a
+ZEROMQ_CMAKE_DIR = $(MOD_BUILD_DIR)/cmake
+ZEROMQ_LIB       = $(MOD_BUILD_DIR)/lib/libzeromq.a
 ZEROMQ_FLAGS     = $(ZEROMQ_CMAKE_DIR)/flags
 
-EMBOX_IMPORTED_CPPFLAGS += -I$(ROOT_DIR)/build/stlport/include/stlport
+EMBOX_IMPORTED_CPPFLAGS += -I$(EXTERNAL_BUILD_DIR)/third_party/STLport/libstlportg/install/include/stlport
 EMBOX_IMPORTED_CPPFLAGS += -I$(abspath .)/include
 EMBOX_IMPORTED_CPPFLAGS += -save-temps=obj
 EMBOX_IMPORTED_CPPFLAGS += -include $(ROOT_DIR)/third-party/STLport/stlport_embox_compat.h
@@ -53,7 +53,7 @@ EMBOX_DERIVED_CXXFLAGS  += $(EMBOX_IMPORTED_CXXFLAGS)
 EMBOX_DERIVED_MAKEFLAGS += $(EMBOX_IMPORTED_MAKEFLAGS)
 
 EMBOX_DERIVED_LDFLAGS   += -Wl,--relocatable -nostdlib
-EMBOX_DERIVED_LDFLAGS   += -L$(BUILD_DIR)/lib
+EMBOX_DERIVED_LDFLAGS   += -L$(MOD_BUILD_DIR)/lib
 all:
 
 .PHONY: all $(ZEROMQ_LIB)

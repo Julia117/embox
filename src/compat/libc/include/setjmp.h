@@ -7,12 +7,13 @@
  * @author Eldar Abusalimov
  */
 
-#ifndef SETJMP_H_
-#define SETJMP_H_
+#ifndef COMPAT_LIBC_SETJMP_H_
+#define COMPAT_LIBC_SETJMP_H_
 
 #include <asm/setjmp.h>
 
 #include <sys/cdefs.h>
+#include <compiler.h>
 
 __BEGIN_DECLS
 
@@ -21,6 +22,7 @@ __BEGIN_DECLS
  * calling environment.
  */
 typedef __jmp_buf jmp_buf;
+typedef jmp_buf sigjmp_buf;
 
 /**
  * Sets up the local buffer and initializes it for the jump. This routine saves
@@ -49,8 +51,12 @@ extern int setjmp(jmp_buf env);
  * @param env #jmp_buf to restore the context from
  * @param value the return value for @c setjmp call
  */
-extern void longjmp(jmp_buf env, int value) __attribute__ ((noreturn));
+extern void _NORETURN longjmp(jmp_buf env, int value);
+
+/* stubs */
+extern void siglongjmp(sigjmp_buf env, int val);
+extern int sigsetjmp(sigjmp_buf, int);
 
 __END_DECLS
 
-#endif /* SETJMP_H_ */
+#endif /* COMPAT_LIBC_SETJMP_H_ */

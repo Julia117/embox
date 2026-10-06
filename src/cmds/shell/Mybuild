@@ -1,20 +1,34 @@
 package embox.cmd.sh
 
-module shell {
-	option number input_buff_sz = 80
+module shell_registry {
+	option number input_buff_sz = 128
 	source "shell.c"
+
+	@IncludeExport(path="cmd")
+	source "shell.h"
+
+	@NoRuntime depends embox.lib.libds
 }
 
-abstract module shell_api { }
-
-module tish {
-	option number rich_prompt_support = 0
-
+abstract module shell_api {
 	option string prompt = "embox> "
 	option string welcome_msg = "Welcome to Embox and have a lot of fun!"
-	option string builtin_commands = "cd export exit logout"
+}
 
-	provides embox.cmd.Shell.commandLine
+@AutoCmd
+@Cmd(name = "tish",
+	help = "Start tish - tiny shell interpretator",
+	man = '''
+		NAME
+			tish - tiny shell
+		AUTHORS
+			Anton Kozlov
+	''')
+module tish extends shell_api {
+	option number rich_prompt_support = 0
+	option number unset_nodelay_mode = 0
+
+	option string builtin_commands = "cd export exit logout"
 
 	source "tish.c"
 
@@ -24,11 +38,12 @@ module tish {
 	depends embox.mem.heap_api
 
 	depends embox.framework.LibFramework
-	depends embox.cmd.sh.shell
+	depends embox.cmd.sh.shell_registry
 	depends embox.kernel.task.api
+	depends embox.compat.posix.unistd.pid
 	depends embox.compat.posix.proc.uid
 	depends embox.compat.posix.proc.waitpid
-	depends embox.compat.posix.passwd
+	depends embox.compat.posix.pwd_api
 	depends embox.compat.libc.str_dup
 
 	@NoRuntime depends embox.compat.posix.util.sleep

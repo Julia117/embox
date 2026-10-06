@@ -1,0 +1,22 @@
+package embox.compat.cxx.tests
+
+@BuildDepends(embox.cxx.LibCxx)
+module memory_test {
+	source "memory.cpp"
+
+	@NoRuntime depends embox.cxx.LibCxx
+}
+
+@BuildDepends(embox.cxx.LibCxx)
+module exception_test {
+	source "exceptions.cpp"
+
+	@NoRuntime depends embox.cxx.LibCxx
+}
+
+@BuildDepends(embox.cxx.LibCxx)
+module inheritance_test {
+	source "inheritance.cpp"
+
+	@NoRuntime depends embox.cxx.LibCxx
+}

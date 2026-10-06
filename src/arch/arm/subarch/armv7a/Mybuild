@@ -1,0 +1,17 @@
+package embox.arch.arm.armv7a
+
+module head extends embox.arch.arm.head {
+	option boolean strict_alignment=true
+	option number multi_processing=0
+
+	source "hardware_init_hook.S"
+}
+	
+module cpu_idle extends embox.arch.cpu_idle {
+	source "cpu_idle.h"
+}
+
+module monitor_mode {
+	source "monitor_armv7.c"
+	source "monitor_exception_table.S"
+}

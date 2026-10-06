@@ -1,0 +1,122 @@
+/**
+ * @file
+ * @brief
+ *
+ * @date 22.08.2024
+ * @author Zeng Zixian
+ */
+
+#include <drivers/irqctrl.h>
+#include <embox/unit.h>
+#include <hal/cpu_idle.h>
+#include <kernel/cpu/cpu.h>
+#include <kernel/irq.h>
+#include <kernel/panic.h>
+#include <kernel/sched.h>
+#include <kernel/spinlock.h>
+#include <kernel/task.h>
+#include <kernel/task/kernel_task.h>
+#include <kernel/thread.h>
+#include <kernel/time/clock_source.h>
+#include <riscv/clint.h>
+#include <riscv/smp_ipi.h>
+
+#include <module/embox/kernel/thread/core.h>
+
+#define THREAD_STACK_SIZE \
+	OPTION_MODULE_GET(embox__kernel__thread__core, NUMBER, thread_stack_size)
+
+EMBOX_UNIT_INIT(unit_init);
+
+extern void *__ap_sp;
+static char ap_stack[NCPU - 1][KERNEL_AP_STACK_SZ]
+    __attribute__((aligned(KERNEL_AP_STACK_SZ)));
+static int ap_ack;
+static spinlock_t startup_lock = SPIN_STATIC_UNLOCKED;
+
+static void *bs_idle_run(void *arg) {
+	panic("%s runned\n", __func__);
+}
+
+extern void thread_set_current(struct thread *t);
+
+static irq_return_t soft_irq_handler(unsigned int irq_nr, void *data) {
+	switch (smp_get_ipi_message()) {
+	case NONE:
+		smp_ack_ipi();
+		break;
+	case RESCHED:
+		smp_ack_ipi();
+		resched();
+		break;
+	default:
+		panic("unknown software interrupt\n");
+		break;
+	}
+
+	return IRQ_HANDLED;
+}
+
+void startup_ap(void) {
+	struct thread *bs_idle;
+	unsigned int irq;
+	int self_id;
+
+	self_id = cpu_get_id();
+
+	__spin_lock(&startup_lock);
+
+	/* enable external interrupt on each AP independently */
+	irqctrl_init();
+
+	/* enable external interrupt on each AP independently */
+	clint_clear_ipi();
+	irq = irqctrl_set_level(RISCV_IRQ_SOFT, 1);
+	irq_attach(irq, soft_irq_handler, 0, NULL, NULL);
+
+	/* set up clock interrupt for each AP independently */
+	clint_set_timer(0);
+	irq = irqctrl_set_level(RISCV_IRQ_TIMER, 1);
+	irqctrl_enable(irq);
+
+	bs_idle = thread_init_stack(__ap_sp - THREAD_STACK_SIZE, THREAD_STACK_SIZE,
+	    SCHED_PRIORITY_MIN, bs_idle_run, NULL);
+	cpu_init(self_id, bs_idle);
+	task_thread_register(task_kernel_task(), bs_idle);
+	thread_set_current(bs_idle);
+	sched_set_current(&bs_idle->schedee);
+
+	ap_ack = 1;
+
+	__spin_unlock(&startup_lock);
+	ipl_enable();
+
+	while (1) {
+		arch_cpu_idle();
+	}
+}
+
+static inline void cpu_start(int cpu_id) {
+	/* Setting up stack and boot */
+	__ap_sp = (char *)&ap_stack[cpu_id - 1] + KERNEL_AP_STACK_SZ;
+
+	ap_ack = 0;
+
+	smp_send_none(cpu_id);
+	while (!ap_ack)
+		__barrier();
+}
+
+static int unit_init(void) {
+	int i, self_id;
+
+	sched_ticker_set_shared();
+	/* Start all CPUs */
+	self_id = cpu_get_id();
+	for (i = 0; i < NCPU; i++) {
+		if (i != self_id)
+			cpu_start(i);
+	}
+
+	return 0;
+}

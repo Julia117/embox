@@ -1,0 +1,8 @@
+package embox.test.spi
+
+module spi_jedec_test {
+	option number bus_num = 0
+	option number cs_num = 0
+
+	source "spi_jedec_test.c"
+}

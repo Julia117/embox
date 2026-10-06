@@ -1,0 +1,537 @@
+/**
+ * @file
+ * @brief GPIO driver for NIIET K1921VG015
+ *
+ * @author  Andrew Bursian
+ * @author  kimstik
+ * @date    21.02.2023
+ */
+
+#include <stdint.h>
+#include <assert.h>
+
+#include <drivers/clk/niiet_rcu.h>
+#include <drivers/gpio.h>
+#include <framework/mod/options.h>
+#include <hal/reg.h>
+#include <kernel/irq.h>
+
+#include <config/board_config.h>
+
+#define GPIO_CHIP_ID     OPTION_GET(NUMBER, gpio_chip_id)
+
+
+#define GPIO_PINS_NUMBER 16
+
+#if CONF_GPIO_PORT_A_IRQ == CONF_GPIO_PORT_B_IRQ
+#define GPIO_SINGLE_IRQ    1
+#else
+#define GPIO_SINGLE_IRQ    0
+#endif /* CONF_GPIO_PORT_A_IRQ == CONF_GPIO_PORT_B_IRQ */
+
+#define ALTFUNC_WIDTH         OPTION_GET(NUMBER, altfunc_field_width)
+#if (ALTFUNC_WIDTH == 4) /* VG1T */
+#define ALTFUNC_MASK          0x7
+#elif (ALTFUNC_WIDTH == 2) /* VG1015 & VK035 */
+#define ALTFUNC_MASK          0x3
+#else
+#error "wrong ALTFUNCNUM_FIELD_WIDTH"
+#endif /* ALTFUNC_WIDTH */
+
+struct gpio_reg {
+	uint32_t GPIO_DATA_reg;       /* 0x00 */
+	uint32_t GPIO_DATAOUT_reg;    /* 0x04 */
+	uint32_t GPIO_DATAOUTSET_reg; /* 0x08 */
+	uint32_t GPIO_DATAOUTCLR_reg; /* 0x0C */
+	uint32_t GPIO_DATAOUTTGL_reg; /* 0x10 */
+	uint32_t GPIO_DENSET_reg;     /* 0x14 VG1T Reserved_denset */
+	uint32_t GPIO_DENCLR_reg;     /* 0x18 */
+	uint32_t GPIO_INMODE_reg;     /* 0x1C */
+	uint32_t GPIO_PULLMODE_reg;   /* 0x20 */
+	uint32_t GPIO_OUTMODE_reg;    /* 0x24 */
+	uint32_t GPIO_DRIVEMODE_reg;  /* 0x28 */
+	uint32_t GPIO_OUTENSET_reg;   /* 0x2C */
+	uint32_t GPIO_OUTENCLR_reg;   /* 0x30 */
+	uint32_t GPIO_ALTFUNCSET_reg; /* 0x34 */
+	uint32_t GPIO_ALTFUNCCLR_reg; /* 0x38 */
+	uint32_t GPIO_ALTFUNCNUM_reg[2]; /* 0x3C */
+	/* uint32_t reserved2[1]; */    /* 0x40 VG1T ALTFUNCNUM1*/
+	uint32_t GPIO_SYNCSET_reg;     /* 0x44 */
+	uint32_t GPIO_SYNCCLR_reg;     /* 0x48 */
+	uint32_t GPIO_QUALSET_reg;     /* 0x4C */
+	uint32_t GPIO_QUALCLR_reg;     /* 0x50 */
+	uint32_t GPIO_QUALMODESET_reg; /* 0x54 */
+	uint32_t GPIO_QUALMODECLR_reg; /* 0x58 */
+	uint32_t GPIO_QUALSAMPLE_reg;  /* 0x5C */
+	uint32_t GPIO_INTENSET_reg;    /* 0x60 */
+	uint32_t GPIO_INTENCLR_reg;    /* 0x64 */
+	uint32_t GPIO_INTTYPESET_reg;  /* 0x68 */
+	uint32_t GPIO_INTTYPECLR_reg;  /* 0x6C */
+	uint32_t GPIO_INTPOLSET_reg;   /* 0x70 */
+	uint32_t GPIO_INTPOLCLR_reg;   /* 0x74 */
+	uint32_t GPIO_INTEDGESET_reg;  /* 0x78 */
+	uint32_t GPIO_INTEDGECLR_reg;  /* 0x7C */
+	uint32_t GPIO_INTSTATUS_reg;   /* 0x80 */
+	uint32_t GPIO_DMAREQSET_reg;   /* 0x84 */
+	uint32_t GPIO_DMAREQCLR_reg;   /* 0x88 */
+	uint32_t GPIO_ADCSOCSET_reg;   /* 0x8C */
+	uint32_t GPIO_ADCSOCCLR_reg;   /* 0x90 */
+	uint32_t reserved3[2];      /* VG1T  RXEVSET & RXEVCLR */
+	uint32_t GPIO_LOCKKEY_reg; /* 0x9C */
+	uint32_t GPIO_LOCKSET_reg; /* 0xA0 */
+	uint32_t GPIO_LOCKCLR_reg; /* 0xA4 */
+};
+
+static const struct gpio_chip niiet_gpio_chip;
+
+struct niiet_gpio_priv {
+	void *gpio_irq_handler[CONF_GPIO_PORT_A_NUM];
+};
+
+static struct niiet_gpio_priv niiet_gpio_priv = {0};
+
+static inline void niiet_gpio_irq_conf_type(volatile struct gpio_reg *gpio_reg,
+    uint32_t mask, int type) {
+	if (1 == type) {
+		gpio_reg->GPIO_INTTYPESET_reg = mask;
+	}
+	else {
+		gpio_reg->GPIO_INTTYPECLR_reg = mask;
+	}
+}
+
+static inline void niiet_gpio_irq_conf_pol(volatile struct gpio_reg *gpio_reg,
+    uint32_t mask, int pol) {
+	if (1 == pol) {
+		gpio_reg->GPIO_INTPOLSET_reg = mask;
+	}
+	else {
+		gpio_reg->GPIO_INTPOLCLR_reg = mask;
+	}
+}
+
+static inline void niiet_gpio_irq_conf_edge(volatile struct gpio_reg *gpio_reg,
+    uint32_t mask, int edge) {
+	if (1 == edge) {
+		gpio_reg->GPIO_INTEDGESET_reg = mask;
+	}
+	else {
+		gpio_reg->GPIO_INTEDGECLR_reg = mask;
+	}
+}
+
+static inline void niiet_gpio_irq_en(volatile struct gpio_reg *gpio_reg,
+    uint32_t mask) {
+	gpio_reg->GPIO_INTENSET_reg = mask;
+}
+
+static inline void niiet_gpio_irq_dis(volatile struct gpio_reg *gpio_reg,
+    uint32_t mask) {
+	gpio_reg->GPIO_INTENCLR_reg = mask;
+}
+
+static inline uint32_t niiet_gpio_irq_get_status(
+    volatile struct gpio_reg *gpio_reg) {
+	return gpio_reg->GPIO_INTSTATUS_reg;
+}
+
+static inline void
+niiet_gpio_irq_clear_status(volatile struct gpio_reg *gpio_reg, uint32_t mask) {
+	gpio_reg->GPIO_INTSTATUS_reg = mask;
+}
+
+static inline volatile struct gpio_reg *
+niiet_gpio_get_gpio_port(unsigned int port) {
+	switch (port) {
+#if defined(CONF_GPIO_PORT_A_REGION_BASE)
+	case 0:
+		return ((volatile struct gpio_reg *)CONF_GPIO_PORT_A_REGION_BASE);
+#endif /* defined (CONF_GPIO_PORT_A_REGION_BASE) */
+#if defined(CONF_GPIO_PORT_B_REGION_BASE)
+	case 1:
+		return ((volatile struct gpio_reg *)CONF_GPIO_PORT_B_REGION_BASE);
+#endif /* defined (CONF_GPIO_PORT_B_REGION_BASE) */
+#if defined(CONF_GPIO_PORT_C_REGION_BASE)
+	case 2:
+		return ((volatile struct gpio_reg *)CONF_GPIO_PORT_C_REGION_BASE);
+#endif /* defined (CONF_GPIO_PORT_C_REGION_BASE) */
+#if defined(CONF_GPIO_PORT_D_REGION_BASE)
+	case 3:
+		return ((volatile struct gpio_reg *)CONF_GPIO_PORT_D_REGION_BASE);
+#endif /* defined (CONF_GPIO_PORT_D_REGION_BASE) */
+#if defined(CONF_GPIO_PORT_E_REGION_BASE)
+	case 4:
+		return ((volatile struct gpio_reg *)CONF_GPIO_PORT_E_REGION_BASE);
+#endif /* defined (CONF_GPIO_PORT_E_REGION_BASE) */
+#if defined(CONF_GPIO_PORT_F_REGION_BASE)
+	case 5:
+		return ((volatile struct gpio_reg *)CONF_GPIO_PORT_F_REGION_BASE);
+#endif /* defined (CONF_GPIO_PORT_F_REGION_BASE) */
+#if defined(CONF_GPIO_PORT_G_REGION_BASE)
+	case 6:
+		return ((volatile struct gpio_reg *)CONF_GPIO_PORT_G_REGION_BASE);
+#endif /* defined (CONF_GPIO_PORT_G_REGION_BASE) */
+#if defined(CONF_GPIO_PORT_H_REGION_BASE)
+	case 7:
+		return ((volatile struct gpio_reg *)CONF_GPIO_PORT_H_REGION_BASE);
+#endif /* defined (CONF_GPIO_PORT_H_REGION_BASE) */
+	default:
+		return NULL;
+	}
+
+	return NULL;
+}
+
+static inline int niiet_gpio_get_port_num (uintptr_t port) {
+	switch (port) {
+#if defined(CONF_GPIO_PORT_A_REGION_BASE)
+	case CONF_GPIO_PORT_A_REGION_BASE:
+		return 0;
+#endif /* defined (CONF_GPIO_PORT_A_REGION_BASE) */
+#if defined(CONF_GPIO_PORT_B_REGION_BASE)
+	case CONF_GPIO_PORT_B_REGION_BASE:
+		return 1;
+#endif /* defined (CONF_GPIO_PORT_B_REGION_BASE) */
+#if defined(CONF_GPIO_PORT_C_REGION_BASE)
+	case CONF_GPIO_PORT_C_REGION_BASE:
+		return 2;
+#endif /* defined (CONF_GPIO_PORT_C_REGION_BASE) */
+#if defined(CONF_GPIO_PORT_D_REGION_BASE)
+	case CONF_GPIO_PORT_D_REGION_BASE:
+		return 3;
+#endif /* defined (CONF_GPIO_PORT_D_REGION_BASE) */
+#if defined(CONF_GPIO_PORT_E_REGION_BASE)
+	case CONF_GPIO_PORT_E_REGION_BASE:
+		return 4;
+#endif /* defined (CONF_GPIO_PORT_E_REGION_BASE) */
+#if defined(CONF_GPIO_PORT_F_REGION_BASE)
+	case CONF_GPIO_PORT_F_REGION_BASE:
+		return 5;
+#endif /* defined (CONF_GPIO_PORT_F_REGION_BASE) */
+#if defined(CONF_GPIO_PORT_G_REGION_BASE)
+	case CONF_GPIO_PORT_G_REGION_BASE:
+		return 6;
+#endif /* defined (CONF_GPIO_PORT_G_REGION_BASE) */
+#if defined(CONF_GPIO_PORT_H_REGION_BASE)
+	case CONF_GPIO_PORT_H_REGION_BASE:
+		return 7;
+#endif /* defined (CONF_GPIO_PORT_H_REGION_BASE) */
+	default:
+		return -1;
+	}
+
+	return -1;
+}
+
+
+static inline int niiet_gpio_get_irq_num (int port) {
+	switch (port) {
+	case 0:
+		return CONF_GPIO_PORT_A_IRQ;
+	case 1:
+		return CONF_GPIO_PORT_B_IRQ;
+#if defined CONF_GPIO_PORT_C_IRQ
+	case 2:
+		return CONF_GPIO_PORT_C_IRQ;
+#endif /* defined CONF_GPIO_PORT_C_IRQ */
+#if defined CONF_GPIO_PORT_D_IRQ
+	case 3:
+		return CONF_GPIO_PORT_D_IRQ;
+#endif /* defined CONF_GPIO_PORT_D_IRQ */
+#if defined CONF_GPIO_PORT_E_IRQ
+	case 4:
+		return CONF_GPIO_PORT_E_IRQ;
+#endif /* defined CONF_GPIO_PORT_E_IRQ */
+#if defined CONF_GPIO_PORT_F_IRQ
+	case 5:
+		return CONF_GPIO_PORT_F_IRQ;
+#endif /* defined CONF_GPIO_PORT_F_IRQ */
+#if defined CONF_GPIO_PORT_G_IRQ
+	case 6:
+		return CONF_GPIO_PORT_G_IRQ;
+#endif /* defined CONF_GPIO_PORT_G_IRQ */
+#if defined CONF_GPIO_PORT_H_IRQ
+	case 7:
+		return CONF_GPIO_PORT_H_IRQ;
+#endif /* defined CONF_GPIO_PORT_H_IRQ */
+	default:
+		return -1;
+	}
+
+	return -1;
+}
+
+static inline char *niiet_gpio_get_gpio_clk(unsigned int port) {
+	char *clk_name;
+
+	switch (port) {
+	case 0:
+		clk_name = CONF_GPIO_PORT_A_CLK_ENABLE();
+		break;
+	case 1:
+		clk_name = CONF_GPIO_PORT_B_CLK_ENABLE();
+		break;
+	case 2:
+#if defined CONF_GPIO_PORT_C_CLK_ENABLE
+		clk_name = CONF_GPIO_PORT_C_CLK_ENABLE();
+#endif /* defined CONF_GPIO_PORT_C_CLK_ENABLE */
+		break;
+	case 3:
+#if defined CONF_GPIO_PORT_D_CLK_ENABLE
+		clk_name = CONF_GPIO_PORT_D_CLK_ENABLE();
+#endif /* defined CONF_GPIO_PORT_D_CLK_ENABLE */
+		break;
+	case 4:
+#if defined CONF_GPIO_PORT_E_CLK_ENABLE
+		clk_name = CONF_GPIO_PORT_E_CLK_ENABLE();
+#endif /* defined CONF_GPIO_PORT_E_CLK_ENABLE */
+		break;
+	case 5:
+#if defined CONF_GPIO_PORT_F_CLK_ENABLE
+		clk_name = CONF_GPIO_PORT_F_CLK_ENABLE();
+#endif /* defined CONF_GPIO_PORT_F_CLK_ENABLE */
+		break;
+	case 6:
+#if defined CONF_GPIO_PORT_G_CLK_ENABLE
+		clk_name = CONF_GPIO_PORT_G_CLK_ENABLE();
+#endif /* defined CONF_GPIO_PORT_G_CLK_ENABLE */
+		break;
+	case 7:
+#if defined CONF_GPIO_PORT_H_CLK_ENABLE
+		clk_name = CONF_GPIO_PORT_H_CLK_ENABLE();
+#endif /* defined CONF_GPIO_PORT_H_CLK_ENABLE */
+		break;
+	default:
+		return NULL;
+	}
+
+	return clk_name;
+}
+
+static irq_return_t niiet_gpio_irq_handler(unsigned int irq_nr, void *data) {
+	uint32_t mask = 0;
+	uint8_t port_num = 0;
+	int res;
+	volatile struct gpio_reg *gpio_reg;
+
+#if GPIO_SINGLE_IRQ
+/* FIXME GPIO_SINGLE_IRQ has not been implemented yet*/
+	res = -1;
+	gpio_reg = NULL;
+#else
+	res = niiet_gpio_get_port_num((uintptr_t)data);
+	gpio_reg = data;
+#endif /* GPIO_SINGLE_IRQ */
+
+	assert(res != -1);
+	port_num = res;
+
+	mask = niiet_gpio_irq_get_status(gpio_reg);
+
+	niiet_gpio_irq_clear_status(gpio_reg, mask);
+
+	gpio_handle_irq(irq_nr, &niiet_gpio_chip, port_num, mask);
+
+	return IRQ_HANDLED;
+}
+
+static int niiet_gpio_setup_irq(int port, uint32_t mask, uint32_t mode) {
+	int res;
+	int irq_port;
+	volatile struct gpio_reg *gpio_reg;
+	void *irq_data;
+	int type;
+	int edge;
+	int pol;
+
+	gpio_reg = niiet_gpio_get_gpio_port(port);
+	if (gpio_reg == NULL) {
+		return -1;
+	}
+
+#if GPIO_SINGLE_IRQ
+	irq_data = &niiet_gpio_priv;
+	irq_port = 0;
+#else
+	irq_data = (void*)gpio_reg; 
+	irq_port = port;
+#endif
+
+
+	niiet_gpio_irq_clear_status(gpio_reg, mask);
+	niiet_gpio_irq_dis(gpio_reg, mask);
+
+	if ((mode & GPIO_MODE_INT_LEVEL0)
+	    || (mode & GPIO_MODE_INT_LEVEL1)) {
+		type = 0;
+	}
+	else {
+		type = 1;
+	}
+
+	if ((mode & GPIO_MODE_INT_RISING)
+	    && (mode & GPIO_MODE_INT_FALLING)) {
+		edge = 1;
+	}
+	else {
+		edge = 0;
+	}
+
+	if ((mode & GPIO_MODE_INT_RISING)
+	    || (mode & GPIO_MODE_INT_LEVEL1)) {
+		pol = 1;
+	}
+	else {
+		pol = 0;
+	}
+
+	niiet_gpio_irq_conf_pol(gpio_reg, mask, pol);
+	niiet_gpio_irq_conf_edge(gpio_reg, mask, edge);
+	niiet_gpio_irq_conf_type(gpio_reg, mask, type);
+
+	if (NULL == niiet_gpio_priv.gpio_irq_handler[irq_port]) {
+		int irq_num;
+		niiet_gpio_irq_dis(gpio_reg, 0xFFFF);
+		niiet_gpio_irq_clear_status(gpio_reg, 0xFFFF);
+
+		irq_num = niiet_gpio_get_irq_num(irq_port);
+		if (-1 == irq_num) {
+			return 0;
+		}
+		res = irq_attach(irq_num, niiet_gpio_irq_handler, 0, (void *)irq_data, "GPIO");
+		if (res < 0) {
+			return res;
+		}
+	}
+
+	if (mode & GPIO_MODE_INT_EN) {
+		niiet_gpio_irq_en(gpio_reg, mask);
+	}
+
+
+	return res;
+}
+
+static inline void niiet_gpio_set_altfunc(volatile struct gpio_reg *gpio_reg,
+					int i, uint32_t alt) {
+	volatile uint32_t *altfunc;
+
+	altfunc = &gpio_reg->GPIO_ALTFUNCNUM_reg[0];
+
+#if ALTFUNC_WIDTH  == 4
+	if(i > 7) {
+		altfunc = &gpio_reg->GPIO_ALTFUNCNUM_reg[1];
+	}
+#endif /* ALTFUNC_WIDTH  == 4 */
+
+	*altfunc &= ~(ALTFUNC_MASK << (i * ALTFUNC_WIDTH));
+	*altfunc |= alt << (i * ALTFUNC_WIDTH);
+}
+
+static int niiet_gpio_setup_mode(unsigned int port, gpio_mask_t pins,
+    uint32_t mode) {
+	volatile struct gpio_reg *gpio_reg;
+	char *clk_name;
+
+	gpio_reg = niiet_gpio_get_gpio_port(port);
+	if (gpio_reg == NULL) {
+		return -1;
+	}
+
+	clk_name = niiet_gpio_get_gpio_clk(port);
+	if (clk_name == NULL) {
+		return -1;
+	}
+
+	/* Enable port */
+	clk_enable(clk_name);
+
+	gpio_reg->GPIO_DENSET_reg |= pins;
+
+	if (mode & GPIO_MODE_IN) {
+		gpio_reg->GPIO_OUTENCLR_reg |= pins;
+	}
+
+	if (mode & GPIO_MODE_IN_PULL_UP) {
+		gpio_reg->GPIO_PULLMODE_reg |= pins;
+	}
+
+	if (mode & GPIO_MODE_OUT) {
+		gpio_reg->GPIO_OUTENSET_reg |= pins;
+	}
+
+	/* Handle open-drain mode: each pin has 2 bits in OUTMODE register
+	 * Value 0b00 = push-pull (PP), 0b01 = open-drain (OD)
+	 * Reference: bme280.c uses GPIO_OUTMODE_PINxx_OD for I2C */
+	if (mode & GPIO_MODE_OUT_OPEN_DRAIN) {
+		for (int i = 0; i < GPIO_PINS_NUMBER; i++) {
+			if (pins & (1 << i)) {
+				/* Clear PP/OD field (2 bits), then set to OD (0b01) */
+				gpio_reg->GPIO_OUTMODE_reg &= ~(0x3 << (i * 2));
+				gpio_reg->GPIO_OUTMODE_reg |= (0x1 << (i * 2));
+			}
+		}
+	}
+
+	if (mode & GPIO_MODE_INT_SECTION) {
+		niiet_gpio_setup_irq(port, pins, mode);
+	}
+
+	if (mode & GPIO_MODE_ALT_SECTION) {
+		/* Enable ALTFUNC */
+		gpio_reg->GPIO_ALTFUNCSET_reg |= pins;
+
+		for (int i = 0; i < GPIO_PINS_NUMBER; i++) {
+			if (pins & (1 << i)) {
+				uint32_t alt = GPIO_MODE_ALT_GET(mode);
+
+				niiet_gpio_set_altfunc(gpio_reg, i, alt);
+			}
+		}
+	}
+
+	return 0;
+}
+
+static void niiet_gpio_set(unsigned int port, gpio_mask_t pins, int level) {
+	volatile struct gpio_reg *gpio_reg;
+
+	gpio_reg = niiet_gpio_get_gpio_port(port);
+	if (gpio_reg == NULL) {
+		return;
+	}
+
+	if (level) {
+		gpio_reg->GPIO_DATAOUTSET_reg |= pins;
+	}
+	else {
+		gpio_reg->GPIO_DATAOUTCLR_reg |= pins;
+	}
+}
+
+static gpio_mask_t niiet_gpio_get(unsigned int port, gpio_mask_t pins) {
+	volatile struct gpio_reg *gpio_reg;
+
+	gpio_reg = niiet_gpio_get_gpio_port(port);
+	if (gpio_reg == NULL) {
+		return -1;
+	}
+
+	return gpio_reg->GPIO_DATA_reg & pins;
+}
+
+static const struct gpio_chip niiet_gpio_chip = {
+    .setup_mode = niiet_gpio_setup_mode,
+    .get = niiet_gpio_get,
+    .set = niiet_gpio_set,
+#if defined(CONF_GPIO_PORT_A_NUM)
+    .nports = CONF_GPIO_PORT_A_NUM,
+#else
+    .nports = 8,
+#endif
+    .chip_id = GPIO_CHIP_ID,
+};
+
+GPIO_CHIP_DEF(&niiet_gpio_chip);
+
+//STATIC_IRQ_ATTACH(GPIO_IRQ, gpio_irq_handler, NULL);

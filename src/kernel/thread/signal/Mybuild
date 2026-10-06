@@ -9,9 +9,12 @@ module siginfoq_stub extends siginfoq_api {
 }
 
 module siginfoq extends siginfoq_api {
+	option number siginfo_pool_sz=64
+
 	source "siginfoq.h"
 	source "siginfoq.c"
-	option number pool_sz = 64
+
+	depends embox.mem.objalloc
 }
 
 module sigstate_stub extends sigstate_api {
@@ -23,7 +26,7 @@ module sigstate extends sigstate_api {
 	source "sigstate.c"
 	depends siginfoq_api
 
-	depends embox.compat.posix.proc.sigset
+	depends embox.compat.posix.signal.sigset
 }
 
 @DefaultImpl(lock_stub)

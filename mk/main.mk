@@ -2,11 +2,10 @@
 # Embox main Makefile.
 #
 
-export MYBUILD_VERSION := 0.4
-
 include mk/core/common.mk
 include mk/util/wildcard.mk
 include mk/variables.mk
+include mk/version.mk
 
 .PHONY : all a
 a : all
@@ -28,6 +27,8 @@ make_mybuild = $(MAKE) -f mk/load.mk
 .PHONY : build b
 b : build
 build :
+	@CONFPATH=`readlink conf` ; if [ -z $${CONFPATH} ] ; then CONFPATH="conf" ; fi ; \
+	echo ">>> Configuration in: $${CONFPATH}/ <<<" ; echo
 	+@$(make_mybuild) $@
 
 define help-build
@@ -79,6 +80,16 @@ Usage: $(MAKE) distgen-<template>
   you have to configure the project first. See configuration targets.
 endef # distgen
 
+.PHONY : dist
+dist :
+	+@$(make_mybuild) $@
+
+define help-dist
+Usage: $(MAKE) dist
+
+  Build a distributable tarball.
+endef # distgen
+
 .PHONY : rootfs
 rootfs :
 	+@$(make_mybuild) build __REBUILD_ROOTFS=1
@@ -125,15 +136,23 @@ endef
 
 # Assuming that we have 'build.conf' in every template.
 PLATFORM_LABEL:=platform/
+PROJECT_LABEL:=project/
+EXT_PROJECT_LABEL:=ext_project/
 template_name=$(patsubst $(TEMPLATES_DIR)/%,%,$1)
 platform_template_name=$(patsubst $(PLATFORM_DIR)/%,$(PLATFORM_LABEL)%,\
+		       $(subst $(SUBPLATFORM_TEMPLATE_DIR),,$1))
+project_template_name=$(patsubst $(PROJECT_DIR)/%,$(PROJECT_LABEL)%,\
+		       $(subst $(SUBPLATFORM_TEMPLATE_DIR),,$1))
+ext_project_template_name=$(patsubst $(EXT_PROJECT_DIR)/%,$(EXT_PROJECT_LABEL)%,\
 		       $(subst $(SUBPLATFORM_TEMPLATE_DIR),,$1))
 
 template_item=$(foreach t,$(patsubst %/build.conf,%,$2),$(call $1_name,$t)|$t)
 
 __templates := \
 	$(call template_item,template, $(call r-wildcard,$(TEMPLATES_DIR)/**/build.conf)) \
-	$(call template_item,platform_template, $(wildcard $(addsuffix /*/build.conf,$(wildcard $(PLATFORM_DIR)/*/templates))))
+	$(call template_item,platform_template, $(call r-wildcard,$(PLATFORM_DIR)/**/build.conf)) \
+	$(call template_item,project_template, $(wildcard $(addsuffix /*/build.conf,$(wildcard $(PROJECT_DIR)/*/templates)))) \
+	$(call template_item,ext_project_template, $(wildcard $(addsuffix /*/build.conf,$(wildcard $(EXT_PROJECT_DIR)/*/templates))))
 
 templates:=$(foreach t,$(__templates),$(firstword $(subst |, ,$t)))
 
@@ -174,9 +193,11 @@ endif # templates
 
 # confload-<template>
 .PHONY : $(templates:%=confload-%)
-$(templates:%=confload-%) : confload-% : confclean
+$(templates:%=confload-%) : confload-% :
+	@$(RM) -fR $(CONF_DIR)   #if this is a link, removes link only
 	@$(MKDIR) $(CONF_DIR)
 	@$(CP) -fR $(call template_name2dir,$*)/* $(CONF_DIR)
+	@$(RM) -r $(BUILD_DIR)
 	@echo 'Config complete'
 
 define help-confload
@@ -278,26 +299,46 @@ Usage: $(MAKE) disasm
   Disassembly image file
 endef # disasm
 
+.PHONY : piggy
+piggy :
+	+@$(make_mybuild) build PIGGY=y
+
+define help-piggy
+Usage: $(MAKE) piggy
+  Make `piggy' image
+endef # piggy
+
+#
+# External project targets
+#
+
+.PHONY : ext_conf
+ext_conf:
+	@$(RM) $(EXT_PROJECT_DIR)
+	@ln -s $(EXT_PROJECT_PATH) $(EXT_PROJECT_DIR)
+	@$(ECHO) "External project path: "$(EXT_PROJECT_PATH)
+
 #
 # Cleaning targets.
 #
 
 .PHONY : clean
 c : clean
-clean :
-	@$(RM) -r $(ROOT_DIR)/build
-	@$(RM) -r $(DIST_DIR)
+clean : #clean regardless build folder as symlink or not
+	@$(RM) -r $(BUILD_DIR)/*
 
 define help-clean
 Usage: $(MAKE) clean
    Or: $(MAKE) c
 
-  Remove most build artifacts (image, libraries, objects, etc.) #TODO Usecase?
+  Remove most build artifacts (image, libraries, objects, etc).
 endef # clean
 
 .PHONY : confclean
-confclean : clean
-	@$(RM) -r $(CONF_DIR)
+confclean :
+	@$(RM) -r $(CONF_DIR)/*
+	@#executes effectively clean on static build folder; not on symlink build 'folder'
+	@$(RM) -r $(BUILD_DIR)
 
 define help-confclean
 Usage: $(MAKE) confclean
@@ -322,13 +363,13 @@ endef # cacheclean
 .PHONY : distclean
 dc : distclean
 distclean : clean confclean cacheclean
+	@$(RM) -r $(DIST_INSTALL_DIR)
 
 define help-distclean
 Usage: $(MAKE) distclean
 
-  Performs full clean: clean, confclean, distclean. After running this,
-  root directory reverts to fresh state, just like after fresh checkout
-  or after archive extraction.
+  After running this, root directory reverts to fresh state,
+  just like after fresh checkout or after archive extraction.
 endef # distclean
 
 #
@@ -340,41 +381,49 @@ help :
 
 define help_main
 Usage: $(MAKE) [targets]
-Mybuild version $(MYBUILD_VERSION).
+Embox version $(EMBOX_VERSION).
 
 Building targets:
-  all (a)        - Default build target, alias to '$(MAKE) build'
-  build (b)      - Build the current active configuration
-  build-<t>      - Build a given configuration template
-  buildgen (bg)  - Unconditionally regenerate build environment
-  buildgen-<t>   - Prepare build environment for a given template
-  distgen (dg)   - Generate self-sustained build environment for distribution
-  distgen-<t>    - Prepare distribution for a given template
-  menubuild (mb) - Interactively select a configuration to build a menu based
-                   program (requires 'dialog')
-  xbuild (xb)    - Interactively select a configuration to build using GTK
-                   client (requires 'Xdialog')
+  all (a)         - Default build target, alias to '$(MAKE) build'
+  build (b)       - Build the current active configuration
+  build-<t>       - Build a given configuration template
+  buildgen (bg)   - Unconditionally regenerate build environment
+  buildgen-<t>    - Prepare build environment for a given template
+  distgen (dg)    - Generate self-sustained build environment for distribution
+  distgen-<t>     - Prepare distribution for a given template
+  dist            - Build a distributable tarball
+  menubuild (mb)  - Interactively select a configuration to build a menu based
+                    program (requires 'dialog')
+  xbuild (xb)     - Interactively select a configuration to build using GTK
+                    client (requires 'Xdialog')
+  disasm          - Build and make disassembly of image
+  piggy           - Build and prepare `piggy image'
 
 Configuration targets:
-  confload       - List available configuration templates
-  confload-<t>   - Load a configuration from template <t>
+  confload        - List available configuration templates
+  confload-<t>    - Load a configuration from template <t>
   menuconfig (mc) - Interactively select a configuration using a menu based
-                   program (requires 'dialog')
+                    program (requires 'dialog')
   xconfig (xc)    - Interactively select a configuration using GTK client
-                   (requires 'Xdialog')
+                    (requires 'Xdialog')
+  ext_conf        - Add external project (folder) to be used together with Embox.
+                    This folder can include one or more different sub-projects folders
+                    with theirs own Embox modules, templates.
+                    Example: make ext_conf EXT_PROJECT_PATH=<your projects path>
 
 Cleaning targets:
-  clean (c)      - Remove most build artifacts (image, libraries, objects, etc.)
-  confclean      - Remove build artifacts and loaded configuration
-  cacheclean     - Flush Mybuild internal cache
-  distclean (dc) - clean + confclean + cacheclean
+  clean (c)       - Remove most build artifacts (image, libraries, objects, etc.)
+  confclean       - Remove loaded configuration (requires redo of configuration setup/load)
+                    Also executes clean when the build folder is static (not a symlink)
+  cacheclean      - Flush Mybuild internal cache
+  distclean (dc)  - Remove all generated files
 
 Documentation targets:
-  dot            - Generate a picture with module dependency graph
-  docsgen        - Denerate documentation from doxygen comments
+  dot             - Generate a picture with module dependency graph
+  docsgen         - Denerate documentation from doxygen comments
 
 Module information:
-  mod            - Various module information. See more in help-mod
+  mod             - Various module information. See more in help-mod
 
 endef
 
@@ -382,6 +431,7 @@ help_entries := \
 	all \
 	build \
 	buildgen \
+	distgen \
 	dot \
 	docsgen \
 	mod \
@@ -394,7 +444,8 @@ help_entries := \
 	confclean \
 	cacheclean \
 	distclean \
-	disasm
+	disasm \
+	piggy
 help_targets := $(help_entries:%=help-%)
 
 # Fixup documentation variables escaping colons (':' -> '$$:').

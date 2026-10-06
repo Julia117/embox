@@ -1,19 +1,31 @@
-#ifndef LUA_STDIO_H_
-#define LUA_STDIO_H_
+/**
+ * @file 
+ * @brief
+ *
+ * @author  Ruslan Nafikov
+ * @date    15.01.2026
+ */
 
+#ifndef LUA_STDIO_OVERRIDE_H_
+#define LUA_STDIO_OVERRIDE_H_
+
+/*
+ * Override header for Embox third-party Lua build.
+ * We want to keep using Embox stdio, but provide missing POSIX helpers.
+ */
 #include_next <stdio.h>
 
-#include <errno.h>
-#include <stddef.h>
+/* Embox libc may not provide these POSIX functions. Provide safe fallbacks. */
+#ifndef flockfile
+#define flockfile(f) ((void)0)
+#endif
 
-#include <sys/cdefs.h>
+#ifndef funlockfile
+#define funlockfile(f) ((void)0)
+#endif
 
-__BEGIN_DECLS
+#ifndef getc_unlocked
+#define getc_unlocked(f) getc(f)
+#endif
 
-static inline FILE * tmpfile(void) {
-	return SET_ERRNO(ENOSYS), NULL;
-}
-
-__END_DECLS
-
-#endif /* LUA_STDIO_H_ */
+#endif /* LUA_STDIO_OVERRIDE_H_ */

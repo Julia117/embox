@@ -1,0 +1,6 @@
+package platform.baikal.evu_ba
+
+static module bsp {
+	@IncludeExport(path="baikal/evu_ba/bsp")
+	source "bmcu_cru.h"
+}

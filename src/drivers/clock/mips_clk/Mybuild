@@ -1,0 +1,13 @@
+package embox.driver.clock
+
+module mips_clk {
+	/**
+	 * The number of cycles during which the coprocessor 0 counter
+	 * is incremented
+	 */
+	option number cyc_per_tick
+
+	source "mips_clk.c"
+
+	@NoRuntime depends embox.kernel.time.clock_source
+}

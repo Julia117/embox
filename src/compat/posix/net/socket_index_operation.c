@@ -9,20 +9,22 @@
 
 #include <stddef.h>
 #include <errno.h>
+#include <sys/uio.h>
+#include <sys/socket.h>
+#include <poll.h>
+#include <net/if.h>
 
 #include <net/socket/ksocket.h>
 
 #include <linux/net_tstamp.h>
-#include <sys/socket.h>
-#include <poll.h>
 
 const struct idesc_ops task_idx_ops_socket;
 
-static ssize_t socket_read(struct idesc *desc, void *buff,
-		size_t size) {
+static ssize_t socket_read(struct idesc *desc, const struct iovec *iov, int cnt) {
 	int ret;
+	ssize_t ret_size;
+	int i;
 	struct msghdr msg;
-	struct iovec iov;
 	struct sock *sk = (struct sock *)desc;
 
 	assert(desc);
@@ -34,26 +36,28 @@ static ssize_t socket_read(struct idesc *desc, void *buff,
 
 	msg.msg_name = NULL;
 	msg.msg_namelen = 0;
-	msg.msg_iov = &iov;
-	msg.msg_iovlen = 1;
+	msg.msg_iov = (struct iovec *)iov;
+	msg.msg_iovlen = cnt;
 	msg.msg_flags = 0;
-
-	iov.iov_base = buff;
-	iov.iov_len = size;
 
 	ret = krecvmsg(sk, &msg, desc->idesc_flags);
 	if (ret != 0) {
 		return ret;
 	}
 
-	return iov.iov_len;
+	ret_size = 0;
+	for (i = 0; i < cnt; i++) {
+		ret_size += iov[i].iov_len;
+	}
+
+	return ret_size;
 }
 
-static ssize_t socket_write(struct idesc *desc, const void *buff,
-		size_t size) {
+static ssize_t socket_write(struct idesc *desc, const struct iovec *iov, int cnt) {
 	int ret;
+	ssize_t ret_size;
+	int i;
 	struct msghdr msg;
-	struct iovec iov;
 	struct sock *sk = (struct sock *)desc;
 
 	assert(desc);
@@ -64,19 +68,26 @@ static ssize_t socket_write(struct idesc *desc, const void *buff,
 
 	msg.msg_name = NULL;
 	msg.msg_namelen = 0;
-	msg.msg_iov = &iov;
-	msg.msg_iovlen = 1;
+	msg.msg_iov = (struct iovec *)iov;
+	msg.msg_iovlen = cnt;
 	msg.msg_flags = 0;
-
-	iov.iov_base = (void *)buff;
-	iov.iov_len = size;
 
 	ret = ksendmsg(sk, &msg, desc->idesc_flags);
 	if (ret != 0) {
 		return ret;
 	}
 
-	return iov.iov_len;
+	ret_size = 0;
+	for (i = 0; i < cnt; i++) {
+		ret_size += iov[i].iov_len;
+	}
+
+	return ret_size;
+}
+
+int ifreq_get_index(struct ifreq *ifreq) {
+	ifreq->ifr_ifindex = 0x11; //FIXME
+	return 0;
 }
 
 static int socket_ioctl(struct idesc *idesc, int request, void *data) {
@@ -85,6 +96,9 @@ static int socket_ioctl(struct idesc *idesc, int request, void *data) {
 	switch (request) {
 	case SIOCGSTAMP:
 		memcpy(data, &sk->last_packet_tstamp, sizeof(struct timeval));
+		return 0;
+	case SIOCGIFINDEX:
+		ifreq_get_index(data);
 		return 0;
 	default:
 		break;
@@ -101,14 +115,32 @@ static int socket_status(struct idesc *desc, int status_nr) {
 
 	res = 0;
 
+	/*
+	 * FIXME From https://pubs.opengroup.org/onlinepubs/9699919799/functions/select.html,
+	 * there are only a few situations when exceptfds are updated.
+	 * It looks like so_error doesn't related directly to exceptfds.
+	 * Also, here: https://stackoverflow.com/questions/15714602/whats-a-file-descriptors-exception
+	 *
+	 *  PJSIP's pjlib-test's tcp_ioqueue_test() failed if sk->opt.so_error
+	 *  where used.
+	 */
+
 	if (status_nr & POLLIN) {
-		res += sk->rx_data_len + sk->opt.so_error;
+		if (sk->opt.so_error) {
+			res = sk->opt.so_error;
+		} else {
+			res += sk->rx_data_len;
+		}
 	}
 	if (status_nr & POLLOUT) {
-		res += 0x600 + sk->opt.so_error;
+		if (sk->opt.so_error) {
+			res = sk->opt.so_error;
+		} else {
+			res += 0x600;
+		}
 	}
 	if (status_nr & POLLERR) {
-		res += sk->opt.so_error;
+		/* res += sk->opt.so_error; */
 	}
 
 	return res;
@@ -124,8 +156,8 @@ static void socket_close(struct idesc *desc) {
 }
 
 const struct idesc_ops task_idx_ops_socket = {
-	.read   = socket_read,
-	.write  = socket_write,
+	.id_readv   = socket_read,
+	.id_writev  = socket_write,
 	.ioctl  = socket_ioctl,
 	.status = socket_status,
 	.close  = socket_close,

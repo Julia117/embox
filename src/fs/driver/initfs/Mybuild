@@ -1,10 +1,35 @@
 package embox.fs.driver
 
-module initfs {
-	source "cpio.c", "initfs_cpio.S"
-	source "initfs.c"
+@DefaultImpl(initfs_old)
+abstract module initfs {
+	option string log_level="LOG_ERR"
+	option string section=".rodata.embox.initfs"
+	option number file_quantity=128
+
+	@IncludeExport(path="fs")
+	source "initfs.h"
+
+	@DefineMacro("INITFS_IMAGE_PATH=\"$(ROOTFS_IMAGE)\"")
+	source "initfs_image.S"
 	source "initfs.lds.S"
-	depends embox.fs.core
+
+	source "initfs_drv.c"
+	source "initfs_mem.c"
+	source "initfs_cpio.c"
+	source "initfs_fops.c"
+	source "initfs_inode_ops.c"
+
 	depends embox.mem.pool
-	option number fdesc_quantity=128
+}
+
+module initfs_old extends initfs {
+	source "initfs_oldfs.c"
+
+	depends embox.fs.core
+}
+
+module initfs_dvfs extends initfs {
+	source "initfs_dvfs.c"
+
+	depends embox.fs.dvfs.core
 }

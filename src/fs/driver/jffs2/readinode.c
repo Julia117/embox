@@ -144,6 +144,7 @@ static inline int read_direntry(struct jffs2_sb_info *c,
 	      uint32_t read, struct jffs2_full_dirent **fdp,
 	      uint32_t *latest_mctime, uint32_t *mctime_ver) {
 	struct jffs2_full_dirent *fd;
+	size_t retlen;
 
 	/* The direntry nodes are checked during the flash scanning */
 	BUG_ON(ref_flags(ref) == REF_UNCHECKED);
@@ -188,9 +189,9 @@ static inline int read_direntry(struct jffs2_sb_info *c,
 		int err;
 		int already = read - sizeof(*rd);
 
-		err = jffs2_flash_read(c, (ref_offset(ref)) + read,
-				rd->nsize - already, &read, &fd->name[already]);
-		if (unlikely(read != rd->nsize - already) && likely(!err)) {
+		err = jffs2_flash_read(c, (ref_offset(ref)) + read, rd->nsize - already,
+		    &retlen, &fd->name[already]);
+		if (unlikely(retlen != rd->nsize - already) && likely(!err)) {
 			return -EIO;
 		}
 		if (unlikely(err)) {
@@ -227,6 +228,7 @@ static inline int read_dnode(struct jffs2_sb_info *c,
 	   	   	   	   	   	   	   	   	   	   	   uint32_t *mctime_ver) {
 	struct jffs2_eraseblock *jeb;
 	struct jffs2_tmp_dnode_info *tn;
+	size_t retlen;
 
 	/* Obsoleted. This cannot happen, surely? dwmw2 20020308 */
 	BUG_ON(ref_obsolete(ref));
@@ -260,9 +262,9 @@ static inline int read_dnode(struct jffs2_sb_info *c,
 					return -ENOMEM;
 				}
 
-				err = jffs2_flash_read(c, ref_offset(ref) + sizeof(*rd), je32_to_cpu(rd->csize),
-							&read, buf);
-				if (unlikely(read != je32_to_cpu(rd->csize)) && likely(!err)) {
+				err = jffs2_flash_read(c, ref_offset(ref) + sizeof(*rd),
+				    je32_to_cpu(rd->csize), &retlen, buf);
+				if (unlikely(retlen != je32_to_cpu(rd->csize)) && likely(!err)) {
 					err = -EIO;
 				}
 				if (err) {
@@ -542,10 +544,10 @@ static int jffs2_do_read_inode_internal(struct jffs2_sb_info *c,
 	struct jffs2_tmp_dnode_info *tn = NULL;
 	struct rb_root tn_list;
 	struct rb_node *rb, *repl_rb;
-	struct jffs2_full_dirent *fd_list;
+	struct jffs2_full_dirent *fd_list = NULL;
 	struct jffs2_full_dnode *fn = NULL;
 	uint32_t crc;
-	uint32_t latest_mctime, mctime_ver;
+	uint32_t latest_mctime = 0, mctime_ver;
 	uint32_t mdata_ver = 0;
 	size_t retlen;
 	int ret;

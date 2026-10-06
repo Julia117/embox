@@ -9,8 +9,8 @@
 
 #include <errno.h>
 #include <drivers/console/mpx.h>
-#include <drivers/keyboard.h>
-#include <util/dlist.h>
+#include <drivers/input/input_dev.h>
+#include <lib/libds/dlist.h>
 #include <embox/unit.h>
 
 EMBOX_UNIT_INIT(vc_mpx_init);
@@ -124,7 +124,7 @@ static int indev_event_cb(struct input_dev *indev) {
 
 	while (0 <= input_dev_event(indev, &ev)) {
 
-		if (ev.type == KEY_PRESSED && (ev.value & CTRL_PRESSED)) {
+		if (ev.type == KBD_KEY_PRESSED && (ev.value & KBD_CTRL_PRESSED)) {
 			int num = (ev.value & 0x7f) - f1;
 			if (num >= 0 && num < VC_MPX_N && vcs[num] != NULL) {
 				mpx_visualize(vcs[num]);
@@ -142,7 +142,7 @@ static int indev_event_cb(struct input_dev *indev) {
 
 static int vc_mpx_init(void) {
 	struct input_dev *indev;
-	const char *devlist[] = {"keyboard", "mouse", NULL};
+	const char *devlist[] = {"ps-keyboard", "ps-mouse", NULL};
 	const char **p;
 
 	for (p = devlist; *p != NULL; p++) {
@@ -155,7 +155,7 @@ static int vc_mpx_init(void) {
 		}
 	}
 
-	if (NULL == (curfb = fb_lookup("fb0"))) {
+	if (NULL == (curfb = fb_lookup(0))) {
 		return -ENOENT;
 	}
 	return 0;

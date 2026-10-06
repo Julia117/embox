@@ -16,12 +16,22 @@ struct affinity {
 };
 
 static inline int sched_affinity_check(struct affinity *a, int mask) {
+	(void)a;
+	(void)mask;
 	return 1;
 }
 
-static inline void sched_affinity_init(struct affinity *a) { }
+static inline void sched_affinity_init(struct affinity *a) {
+	(void)a;
+ }
 
 /* TODO none affinity shouldn't have set method */
-static inline void sched_affinity_set(struct affinity *a, int mask) { }
+static inline void sched_affinity_set(struct affinity *a, int mask) {
+	(void)a;
+	(void)mask;
+ }
+
+#define __SCHED_AFFINITY_INIT() \
+	{ }
 
 #endif /* AFFINITY_NONE_H_ */

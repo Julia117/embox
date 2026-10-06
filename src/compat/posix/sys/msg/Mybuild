@@ -1,0 +1,16 @@
+package embox.compat.posix.sys.msg
+
+/* System V message queue */
+static module msg {
+	option number msg_count=8
+	option number msg_buf_size=1024
+
+	source "msg.c"
+
+	@IncludeExport(path="sys")
+	source "msg.h"
+
+	@NoRuntime depends embox.mem.pool
+	@NoRuntime depends embox.lib.libds
+	@NoRuntime depends embox.compat.posix.sys.ipc
+}

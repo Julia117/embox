@@ -1,62 +1,53 @@
 /*FIXME mybuild wrong packet name */
 package embox.driver.video
 
+module fb_header {
+	@IncludeExport(path="drivers/video")
+	source "fb.h"
+}
+
+static module fb_section {
+	option number size = 0
+
+	source "fb.lds.S"
+}
+
 module fb {
 	source "fb.c"
 
-	@IncludeExport(path="drivers/video")
-	source "fb.h"
-
 	option number fb_amount=2
+	option string log_level="LOG_NONE"
+
+	depends fb_header
 	depends embox.mem.pool
 	@NoRuntime depends embox.compat.libc.all
-	//depends embox.fs.rootfs
 	depends fb_videomodes
 	depends fonts
-	//depends embox.driver.virtual.fb_device
+	depends embox.driver.video.fb_devfs
 }
 
-module bochs {
-	source "bochs.c"
-
+module fb_overlay {
 	@IncludeExport(path="drivers/video")
-	source "vbe.h"
+	source "fb_overlay.h"
 
-	depends embox.driver.pci
-	@NoRuntime depends fb
-	@NoRuntime depends embox.compat.libc.all
-}
-
-module cirrus_logic {
-	source "cirrus_logic.c"
-
-	@IncludeExport(path="drivers/video")
-	source "cirrus_logic.h"
+	source "fb_overlay.c"
 
 	depends fb
-	depends embox.driver.pci
-}
-
-module generic {
-	source "generic.c"
-
-	option number vendor_id
-	option number product_id
-
-	option number fb_bar = 0
-
-	depends fb
-	depends embox.driver.pci
+	depends fonts
 }
 
 module fb_videomodes {
 	source "fb_videomodes.c"
+
+	@IncludeExport(path="drivers/video")
+	source "fb_videomodes.h"
 
 	depends vesa_modes
 }
 
 module vesa_modes {
 	source "vesa_modes.c"
+	source "vesa_videomodes_table.c"
 
 	@IncludeExport(path="drivers/video")
 	source "vesa_modes.h"
@@ -67,9 +58,4 @@ module fonts {
 
 	@IncludeExport(path="drivers/video")
 	source "font.h"
-}
-
-@BuildDepends(efm32zg_sk3200.bsp)
-module efm32_lcd {
-	source "efm32_lcd.c"
 }

@@ -1,0 +1,13 @@
+/**
+ * @file
+ *
+ * @date 26.11.2015
+ * @author: Anton Bondarev
+ */
+
+#ifndef THIRD_PARTY_FUSE_FUSE_LINUX_INCLUDE_PATHS_H_
+#define THIRD_PARTY_FUSE_FUSE_LINUX_INCLUDE_PATHS_H_
+
+
+
+#endif /* THIRD_PARTY_FUSE_FUSE_LINUX_INCLUDE_PATHS_H_ */

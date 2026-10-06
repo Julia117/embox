@@ -1,0 +1,21 @@
+package platform.opencv.data_samples
+
+module fruits_512x480_png {
+	@InitFS(target_name="fruits.png")
+	source "fruits_512x480.png"
+}
+
+module fruits_512x269_png {
+	@InitFS(target_name="fruits.png")
+	source "fruits_512x269.png"
+}
+
+module sample_avi {
+	@InitFS(target_name="sample.avi")
+	source "sample.avi"
+}
+
+module test_mp4 {
+	@InitFS(target_name="test.mp4")
+	source "test.mp4"
+}

@@ -1,0 +1,13 @@
+package platform.dialog.da14680
+
+module platform_init extends platform.platform_init {
+	option number gpregs_base
+
+	source "platform_init.c"
+
+	@NoRuntime depends da14680_lds_quirk
+}
+
+module da14680_lds_quirk {
+	source "da14680_quirk.lds.S"
+}

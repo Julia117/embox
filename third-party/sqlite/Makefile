@@ -7,8 +7,6 @@ PKG_MD5     := 0f5459cde43cb269e5120ecd2c671ced
 
 PKG_PATCHES := pkg_patch.txt setpriority.patch
 
-include $(EXTBLD_LIB)
-
 $(CONFIGURE) :
 	export EMBOX_GCC_LINK=full; \
 	cd $(PKG_SOURCE_DIR) && ( \
@@ -29,7 +27,7 @@ $(CONFIGURE) :
 
 $(BUILD) :
 	cd $(PKG_SOURCE_DIR) && ( \
-		make MAKEFLAGS='$(EMBOX_IMPORTED_MAKEFLAGS)'; \
+		$(MAKE) MAKEFLAGS='$(EMBOX_IMPORTED_MAKEFLAGS)'; \
 	)
 	touch $@
 

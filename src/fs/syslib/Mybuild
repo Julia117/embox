@@ -1,77 +1,23 @@
-package embox.fs
+package embox.fs.syslib
 
-@DefaultImpl(SysLibFsNone)
-abstract module SysLibFile {
+@DefaultImpl(fs_none)
+abstract module file {
 
 }
 
-module SysLibFsFull extends SysLibFile {
-	source "kfile.c"
+module fs_full extends file {
+	source "oldfs_kopen.c"
 	source "kfile_node.c"
 
-	depends embox.fs.file_desc
+	depends embox.compat.libc.assert
+	depends embox.fs.core
+	depends embox.fs.file_desc_oldfs
+	depends embox.fs.syslib.kfile.kfile_oldfs
 	depends embox.security.api
-
-	depends SysLibFileSystemFull
-	depends Perm
+	depends embox.compat.posix.util.gettimeofday /* kfile_change_stat */
+	depends embox.fs.syslib.perm
 }
 
-module SysLibFsNone extends SysLibFile {
+module fs_none extends file {
 	source "nokfile.c"
 }
-
-@DefaultImpl(SysLibFileSystemNone)
-abstract module SysLibFileSystem {
-
-}
-
-module SysLibFileSystemNone extends SysLibFileSystem {
-	source "nokfsop.c"
-}
-
-module SysLibFileSystemFull extends SysLibFileSystem {
-	source "kfsop.c"
-	source "fsop.c"
-
-	depends dcache
-	depends Perm
-
-	depends SysLibFsFull        // kfile_fill_stat
-
-	depends embox.kernel.thread.mutex
-	depends embox.compat.libc.str_dup
-	depends embox.compat.posix.fs.open
-	depends embox.compat.posix.util.environ
-	depends embox.util.tree
-	/*depends embox.fs.core // for vfs*/
-
-	option number flock_quantity=128
-}
-
-module Perm {
-	source "perm.c"
-
-	depends embox.security.api
-	depends embox.compat.posix.util.environ
-	@NoRuntime depends embox.compat.posix.proc.All
-}
-
-@DefaultImpl(noncache)
-abstract module dcache {
-
-}
-
-module dcache_last extends dcache{
-	option number dcache_table_size=0x10
-	option number dcache_size=0x10
-
-
-	source "dcache.c"
-	depends embox.util.hashtable
-}
-
-module noncache extends dcache{
-	source "noncache.c"
-}
-
-

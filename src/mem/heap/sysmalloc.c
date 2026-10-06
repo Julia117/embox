@@ -9,13 +9,14 @@
 #include <errno.h>
 #include <unistd.h>
 
+#include <util/err.h>
+
 #include <kernel/task.h>
 #include <kernel/printk.h>
 #include <kernel/task/kernel_task.h>
 #include <kernel/task/resource/task_heap.h>
 #include <mem/sysmalloc.h>
-
-#include "mspace_malloc.h"
+#include <mem/heap/mspace_malloc.h>
 
 static struct dlist_head *kernel_task_mspace(void) {
 	struct task_heap *task_heap;
@@ -41,7 +42,14 @@ void sysfree(void *ptr) {
 }
 
 void *sysrealloc(void *ptr, size_t size) {
-	return mspace_realloc(ptr, size, kernel_task_mspace());
+	void *ret;
+
+	ret = mspace_realloc(ptr, size, kernel_task_mspace());
+	if (0 > ptr2err(ret)) {
+		return NULL;
+	}
+
+	return ret;
 }
 
 void *syscalloc(size_t nmemb, size_t size) {

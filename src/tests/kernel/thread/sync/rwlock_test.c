@@ -58,22 +58,22 @@ static void *high_run(void *arg) {
 }
 
 static int setup(void) {
-	sched_priority_t l = 200, m = 210, h = 220;
+	int l = 200, m = 210, h = 220;
 
 	rwlock_init(&r);
 
 	low = thread_create(THREAD_FLAG_SUSPENDED, low_run, NULL);
-	test_assert_zero(err(low));
+	test_assert_zero(ptr2err(low));
 
 	mid = thread_create(THREAD_FLAG_SUSPENDED, mid_run, NULL);
-	test_assert_zero(err(mid));
+	test_assert_zero(ptr2err(mid));
 
 	high = thread_create(THREAD_FLAG_SUSPENDED, high_run, NULL);
-	test_assert_zero(err(high));
+	test_assert_zero(ptr2err(high));
 
-	test_assert_zero(thread_set_priority(low, l));
-	test_assert_zero(thread_set_priority(mid, m));
-	test_assert_zero(thread_set_priority(high, h));
+	test_assert_zero(schedee_priority_set(&low->schedee, l));
+	test_assert_zero(schedee_priority_set(&mid->schedee, m));
+	test_assert_zero(schedee_priority_set(&high->schedee, h));
 
 	return 0;
 }

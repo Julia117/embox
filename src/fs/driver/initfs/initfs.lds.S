@@ -1,7 +1,11 @@
+#include <framework/mod/options.h>
+
+#define INITFS_SECTION OPTION_GET(STRING,section)
+
 SECTIONS {
-	.rodata.initfs : {
+	INITFS_SECTION : {
 		_initfs_start = .;
-		*(.rodata.initfs)
+		*(.rodata.embox.initfs_image)
 		_initfs_end = .;
 	}
 }

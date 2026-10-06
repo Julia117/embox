@@ -1,25 +1,29 @@
 
 PKG_NAME := libmodbus
-PKG_VER  := 3.0.6
+PKG_VER  := 3.1.11
 
-PKG_SOURCES := http://libmodbus.org/releases/$(PKG_NAME)-$(PKG_VER).tar.gz
-PKG_MD5     := c80f88b6ca19cabc4ceffc195ca07771
-
-include $(EXTBLD_LIB)
-
-libmodbus_cflags = -I$(ROOT_DIR)/third-party/lib/libmodbus/include/ \
+PKG_SOURCES := https://github.com/stephane/libmodbus/archive/refs/tags/v$(PKG_VER).tar.gz
+PKG_MD5     := ff089fe3047d1c7b0ad2b01713b5b657
 
 $(CONFIGURE) :
 	export EMBOX_GCC_LINK=full; \
 	cd $(PKG_SOURCE_DIR) && ( \
-		CC=$(EMBOX_GCC) ./configure --host=$(AUTOCONF_TARGET_TRIPLET) \
-		prefix=$(PKG_INSTALL_DIR) \
-		CFLAGS=$(libmodbus_cflags) \
+		./autogen.sh; \
+		./configure \
+			--host=$(AUTOCONF_TARGET_TRIPLET) \
+			--prefix=$(PKG_INSTALL_DIR) \
+			CC=$(EMBOX_GCC) \
 	)
 	touch $@
 
 $(BUILD) :
 	cd $(PKG_SOURCE_DIR) && ( \
-		make install MAKEFLAGS='$(EMBOX_IMPORTED_MAKEFLAGS)'; \
+		$(MAKE) MAKEFLAGS='$(EMBOX_IMPORTED_MAKEFLAGS)'; \
+	)
+	touch $@
+
+$(INSTALL) :
+	cd $(PKG_SOURCE_DIR) && ( \
+		$(MAKE) install MAKEFLAGS='$(EMBOX_IMPORTED_MAKEFLAGS)'; \
 	)
 	touch $@

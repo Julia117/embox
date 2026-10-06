@@ -1,0 +1,24 @@
+package embox.driver.usb.gadget
+
+module f_acm {
+	option string log_level="LOG_ERR"
+
+	option number max_packet_size = 64
+
+	source "f_acm.c"
+	source "acm_tty.c"
+
+	@NoRuntime depends embox.driver.usb.class.cdc
+
+	depends embox.driver.serial.core
+	depends embox.driver.serial.diag
+}
+
+module acm_gadget {
+	option string log_level="LOG_ERR"
+	option number max_packet_size = 64
+
+	source "acm_gadget.c"
+
+	depends f_acm
+}

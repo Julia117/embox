@@ -1,0 +1,31 @@
+package platform.stm32.f4.stm32f4ve
+
+@BuildArtifactPath(cppflags="-DSTM32F407xx -DUSE_STM32F4VE")
+static module stm32f4ve_conf extends third_party.bsp.stmf4cube.stm32f4_conf {
+	@IncludeExport(path="")
+	source "cube_conf.h"
+}
+
+@Build(stage=1)
+@BuildDepends(stm32f4ve_conf)
+@BuildDepends(third_party.bsp.stmf4cube.cube)
+@BuildDepends(third_party.bsp.stmf4cube.bsp_drivers.stm324xg_eval_sd)
+static module bsp extends third_party.bsp.st_bsp_api {
+	/* STM32F40x and STM32F41x Errata sheet:
+	 *
+	 * https://www.st.com/content/ccc/resource/technical/document/errata_sheet/0a/98/58/84/86/b6/47/a2/DM00037591.pdf/files/DM00037591.pdf/jcr:content/translations/en.DM00037591.pdf
+	 *
+	 *  "2.5.2 Corrupted last bit of data and/or CRC,
+	 *  received in Master mode with delayed SCK feedback" */
+	option boolean errata_spi_wrong_last_bit=false
+
+	source "clock_config.c"
+
+	@NoRuntime depends third_party.bsp.stmf4cube.bsp_drivers.stm324xg_eval_sd
+	@NoRuntime depends third_party.bsp.stmf4cube.cube
+	@NoRuntime depends stm32f4ve_conf
+	@NoRuntime depends platform.stm32.stm32cube_compat
+	@NoRuntime depends platform.stm32.stm32cube_osc_config_f4
+	@NoRuntime depends platform.stm32.stm32cube_sysclock_init
+}
+

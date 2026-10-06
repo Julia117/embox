@@ -10,11 +10,9 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
-#include <fs/fat.h>
-#include <fs/node.h>
-#include <fs/vfs.h>
-#include <fs/hlpr_path.h>
 
+#include <fs/hlpr_path.h>
+#include <fs/fat.h>
 
 int fat_check_filename(char *filename) {
 	char *point;
@@ -56,13 +54,13 @@ int fat_check_filename(char *filename) {
 	}
 	return 0;
 }
-
+#if 0
 void fat_get_filename(char *tmppath, char *filename) {
 	char *p;
 
 	p = tmppath;
 	/* strip leading path separators */
-	while (*tmppath == DIR_SEPARATOR){
+	while (*tmppath == DIR_SEPARATOR) {
 		strcpy((char *) tmppath, (char *) tmppath + 1);
 	}
 	while (*(p++));
@@ -74,16 +72,11 @@ void fat_get_filename(char *tmppath, char *filename) {
 	if (*p == DIR_SEPARATOR) {
 		p++;
 	}
-	path_canonical_to_dir(filename, p);
-	if (p > tmppath) {
-		p--;
-	}
-	if (*p == DIR_SEPARATOR || p == tmppath) {
-		*p = 0;
-	}
-}
 
-void fat_set_filetime(struct dirent *de) {
+	return;
+}
+#endif
+void fat_set_filetime(struct fat_dirent *de) {
 	/* TODO set normal time */
 		de->crttime_l = 0x20;	/* 01:01:00am, Jan 1, 2006. */
 		de->crttime_h = 0x08;
@@ -120,10 +113,10 @@ char *path_canonical_to_dir(char *dest, char *src) {
 			continue;
 		}
 		if (*src >= 'a' && *src <='z') {
-			*src = (*src - 'a') + 'A';
+			*(dest + i) = (*src - 'a') + 'A';
+		} else {
+			*(dest + i) = *src;
 		}
-
-		*(dest + i) = *src;
 		src++;
 	}
 

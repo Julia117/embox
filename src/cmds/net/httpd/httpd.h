@@ -12,41 +12,36 @@
 #include <stdio.h>
 #include <sys/socket.h>
 
+#ifdef __EMBUILD_MOD__
+
+#include <util/log.h>
+#define httpd_error log_error
+#define httpd_warning log_warning
+#define httpd_info log_info
+#define httpd_debug log_debug
+
+#else /* __EMBUILD_MOD__ */
+
+#include <stdio.h>
+#define httpd_error(fmt, ...) fprintf(stderr, "error: " fmt "\n", ##__VA_ARGS__)
+#define httpd_warning(fmt, ...) fprintf(stderr, "warning: " fmt "\n", ##__VA_ARGS__)
+#define httpd_info(fmt, ...) fprintf(stderr, "info: " fmt "\n", ##__VA_ARGS__)
+#define httpd_debug(fmt, ...) fprintf(stderr, "debug: " fmt "\n", ##__VA_ARGS__)
+
+#endif /* __EMBUILD_MOD__ */
+
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(array) \
 	(sizeof(array) / sizeof(*(array)))
 #endif
 
 #define HTTPD_MAX_PATH 128
-#define CGI_PREFIX  "/cgi-bin/"
-
-#define HTTPD_LOG_QUIET 0
-#define HTTPD_LOG_ERROR 1
-#define HTTPD_LOG_DEBUG 2
-
-#define HTTPD_LOG_LEVEL HTTPD_LOG_DEBUG
-
-#define HTTPD_L       "httpd: "
-#define HTTPD_L_DEBUG HTTPD_L "debug: "
-
-#if HTTPD_LOG_LEVEL >= HTTPD_LOG_DEBUG
-#define HTTPD_DEBUG(_msg, ...) \
-	fprintf(stderr, HTTPD_L_DEBUG _msg, ## __VA_ARGS__)
-#else
-#define HTTPD_DEBUG(_msg, ...)
-#endif
-
-#if HTTPD_LOG_LEVEL >= HTTPD_LOG_ERROR
-#define HTTPD_ERROR(_msg, ...) \
-	fprintf(stderr, HTTPD_L _msg, ## __VA_ARGS__)
-#else
-#define HTTPD_ERROR(_msg, ...)
-#endif
 
 struct client_info {
 	struct sockaddr ci_addr;
 	socklen_t ci_addrlen;
 	int ci_sock;
+	int ci_index;
 
 	const char *ci_basedir;
 };
@@ -61,15 +56,20 @@ struct http_req {
 	char *method;
 	char *content_len;
 	char *content_type;
+	char *authorization;
 };
 
 extern char *httpd_parse_request(char *str, struct http_req *hreq);
+/* return -errcode or number of read butes */
+extern int httpd_build_request(struct client_info *cinfo, struct http_req *req,
+		char *buf, size_t buf_sz);
 
-extern pid_t httpd_try_respond_script(const struct client_info *cinfo, const struct http_req *hreq);
-extern pid_t httpd_try_respond_cmd(const struct client_info *cinfo, const struct http_req *hreq);
-extern int httpd_try_respond_file(const struct client_info *cinfo, const struct http_req *hreq);
+extern pid_t httpd_try_process(const struct client_info *cinfo, const struct http_req *hreq);
+extern int httpd_try_respond_file(const struct client_info *cinfo, const struct http_req *hreq,
+		char *buf, size_t buf_sz);
 
 extern const char *httpd_filename2content_type(const char *filename);
+extern int httpd_header(const struct client_info *cinfo, int st, const char *msg);
 
 #endif /* HTTPD_H_ */
 

@@ -1,0 +1,6 @@
+package embox.compat.posix.timerfd.tests
+
+@TestFor(embox.compat.posix.timerfd)
+module timerfd_test {
+	source "timerfd_tests.c"
+}

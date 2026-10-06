@@ -117,7 +117,14 @@ extern int irq_detach(unsigned int irq_nr, void *data);
  */
 extern void irq_dispatch(unsigned int interrupt_nr);
 
-#include <asm-generic/static_irq.h>
+#ifdef SMP /* XXX */
+/**
+ * Enable interrupt of all attached IRQs. Mainly used in SMP for
+ * APs initialization. This allows AP to handler interrupt independently
+ */
+extern void irq_enable_attached(void);
+#endif
+
 #ifndef STATIC_IRQ_EXTENTION
 #define STATIC_IRQ_ATTACH(_irq_nr, _hnd, _data)
 #endif

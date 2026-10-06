@@ -1,6 +1,8 @@
 package embox.security
 
 module smac extends api {
+	@IncludeExport(path="security/smac")
+	source "smac.h"
 	source "smac.c",
 	       "smac_security.c"
 
@@ -16,6 +18,8 @@ module smac extends api {
 
 	option string default_file_label="*"
 
+	depends embox.compat.posix.passwd
+	depends embox.compat.posix.proc.uid
 	depends embox.fs.xattr
 	depends embox.kernel.task.resource.security
 	depends embox.kernel.task.api
@@ -23,7 +27,7 @@ module smac extends api {
 	depends embox.security.seculog
 	depends embox.security.seculog_file
 
-	depends embox.kernel.time.timekeeper
+	depends embox.kernel.time.kernel_time
 }
 
 @DefaultImpl(smac_user_static_db)
@@ -40,7 +44,7 @@ module smac_user_dynamic_db extends smac_user_db {
 
 	source "smac_user_dynamic_init.c"
 
-	depends embox.fs.rootfs
+	depends embox.fs.rootfs_oldfs
 	depends embox.fs.driver.ramfs
 	depends embox.cmd.fs.cp
 	depends embox.cmd.chmod

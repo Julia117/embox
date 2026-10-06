@@ -14,9 +14,6 @@
 
 #define HUGE_VAL ((double)-1)
 
-#define IN6_ARE_ADDR_EQUAL(a,b) \
-	0
-
 /* (termios.h) Extensions to the termios c_iflag bit map.  */
 #define IXANY           0x0800  /* allow any key to continue ouptut */
 
@@ -25,23 +22,9 @@
 
 struct utimbuf;
 
-static inline void tzset (void) {
-	printf("tcl>>> %s\n", __func__);
-	return;
-}
-
 static inline double ldexp(double x, int exp) {
 	printf("tcl>>> %s\n", __func__);
 	return -1;
-}
-
-static inline int chown(const char *path, uid_t owner, gid_t group) {
-	printf("tcl>>> %s\n", __func__);
-	return -1;
-}
-
-static inline void rewinddir(char *dirp) {
-	printf("tcl>>> %s\n", __func__);
 }
 
 static inline char *realpath(const char *path, char *resolved_path) {
@@ -59,11 +42,6 @@ static inline int mknod(const char *pathname, mode_t mode, dev_t dev) {
 	return -1;
 }
 
-static inline ssize_t readlink(const char *path, char *buf, size_t bufsiz) {
-	printf("tcl>>> %s\n", __func__);
-	return -1;
-}
-
 static inline int symlink(const char *oldpath, const char *newpath) {
 	printf("tcl>>> %s\n", __func__);
 	return -1;
@@ -75,11 +53,6 @@ static inline int utime(const char *filename, const struct utimbuf *times) {
 }
 
 static inline int mkstemps(char *template, int suffixlen) {
-	printf("tcl>>> %s\n", __func__);
-	return -1;
-}
-
-static inline int execvp(const char *file, char *const argv[]) {
 	printf("tcl>>> %s\n", __func__);
 	return -1;
 }

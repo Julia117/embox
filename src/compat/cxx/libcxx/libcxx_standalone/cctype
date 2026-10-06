@@ -1,0 +1,30 @@
+/**
+ * @file
+ * @brief C++ forwarding header
+ * @date 04.07.12
+ * @author Ilia Vaprol
+ */
+
+#ifndef LIBCXX_STANDALONE_CCTYPE_
+#define LIBCXX_STANDALONE_CCTYPE_
+
+#include <ctype.h>
+
+namespace std {
+	using ::isalnum;
+	using ::isalpha;
+	using ::iscntrl;
+	using ::isdigit;
+	using ::isgraph;
+	using ::islower;
+	using ::isprint;
+	using ::ispunct;
+	using ::isspace;
+	using ::isupper;
+	using ::isxdigit;
+	using ::tolower;
+	using ::toupper;
+	using ::isblank;
+} // namespace std
+
+#endif // LIBCXX_STANDALONE_CCTYPE_

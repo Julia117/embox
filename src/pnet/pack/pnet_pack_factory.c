@@ -7,11 +7,11 @@
  * @author Anton Bondarev
  */
 
-#include <util/array.h>
+#include <lib/libds/array.h>
 #include <mem/objalloc.h>
 
-#include <pnet/pnet_pack.h>
-#include <pnet/types.h>
+#include <pnet/pack/pnet_pack.h>
+#include <pnet/core/types.h>
 
 ARRAY_SPREAD_DEF(const struct pnet_pack_desc, __pnet_pack_registry);
 

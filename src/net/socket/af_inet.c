@@ -8,22 +8,25 @@
  */
 
 #include <errno.h>
-#include <framework/net/sock/api.h>
+
 #include <stddef.h>
 #include <arpa/inet.h>
-#include <net/sock.h>
 #include <sys/socket.h>
-#include <net/socket/inet_sock.h>
-#include <net/inetdevice.h>
-#include <embox/net/family.h>
 #include <string.h>
-#include <mem/misc/pool.h>
-#include <net/l3/route.h>
-#include <net/l3/ipv4/ip.h>
 #include <netinet/in.h>
 
-#include <net/socket/inet_sock.h>
+#include <net/sock.h>
+#include <net/inetdevice.h>
 
+#include <net/family.h>
+#include <net/net_sock.h>
+
+#include <mem/misc/pool.h>
+
+#include <net/l3/route.h>
+#include <net/l3/ipv4/ip.h>
+
+#include <net/socket/inet_sock.h>
 #include <framework/mod/options.h>
 
 #define MODOPS_AMOUNT_INET_SOCK OPTION_GET(NUMBER, amount_inet_sock)
@@ -55,6 +58,7 @@ static int inet_init(struct sock *sk) {
 	in_sk->sk.src_addr = (const struct sockaddr *)&in_sk->src_in;
 	in_sk->sk.dst_addr = (const struct sockaddr *)&in_sk->dst_in;
 	in_sk->sk.addr_len = sizeof(struct sockaddr_in);
+	memset(&in_sk->opt, 0, sizeof in_sk->opt);
 
 	return 0;
 }
@@ -102,6 +106,28 @@ static int inet_addr_tester(const struct sockaddr *lhs_sa,
 							sizeof rhs_in->sin_addr)))
 			&& (lhs_in->sin_port == rhs_in->sin_port);
 }
+#if defined(NET_NAMESPACE_ENABLED) && (NET_NAMESPACE_ENABLED == 1)
+int sock_addr_is_busy_net_ns(const struct sock_proto_ops *p_ops,
+		sock_addr_tester_ft tester, const struct sockaddr *addr,
+		socklen_t addrlen, struct sock *src_sk) {
+	const struct sock *sk;
+
+	assert(p_ops != NULL);
+	assert(tester != NULL);
+
+	sock_foreach(sk, p_ops) {
+		if (!cmp_net_ns(src_sk->net_ns, sk->net_ns)) {
+			continue;
+		}
+		if ((sk->addr_len == addrlen)
+				&& tester(addr, sk->src_addr)) {
+			return 1;
+		}
+	}
+
+	return 0;
+}
+#endif
 
 static int inet_bind(struct sock *sk, const struct sockaddr *addr,
 		socklen_t addrlen) {
@@ -119,10 +145,19 @@ static int inet_bind(struct sock *sk, const struct sockaddr *addr,
 	if (addr_in.sin_family != AF_INET) {
 		return -EAFNOSUPPORT;
 	}
+#if defined(NET_NAMESPACE_ENABLED) && (NET_NAMESPACE_ENABLED == 1)
 	else if ((addr_in.sin_addr.s_addr != htonl(INADDR_ANY)) &&
-			!ip_is_local(addr_in.sin_addr.s_addr, true, true)) {
+			!ip_is_local_net_ns(addr_in.sin_addr.s_addr,
+								IP_LOCAL_BROADCAST | IP_LOCAL_MULTICAST,
+								sk->net_ns)) {
 		return -EADDRNOTAVAIL;
 	}
+#else
+	else if ((addr_in.sin_addr.s_addr != htonl(INADDR_ANY)) &&
+			!ip_is_local(addr_in.sin_addr.s_addr, IP_LOCAL_BROADCAST | IP_LOCAL_MULTICAST)) {
+		return -EADDRNOTAVAIL;
+	}
+#endif
 
 	if (addr_in.sin_port == 0) {
 		/* Allocation of an ephemeral port, when the port number in a socket address is specified as 0,
@@ -134,12 +169,19 @@ static int inet_bind(struct sock *sk, const struct sockaddr *addr,
 			return -ENOMEM;
 		}
 	}
-	else if (sock_addr_is_busy(sk->p_ops, inet_addr_tester, (struct sockaddr *)&addr_in,
-				addrlen)) {
+#if defined(NET_NAMESPACE_ENABLED) && (NET_NAMESPACE_ENABLED == 1)
+	else if (sock_addr_is_busy_net_ns(sk->p_ops, inet_addr_tester, (struct sockaddr *)&addr_in,
+				addrlen, sk)) {
 		/* TODO consider opt.so_reuseaddr */
 		return -EADDRINUSE;
 	}
-
+#else
+	else if (sock_addr_is_busy(sk->p_ops, inet_addr_tester, (struct sockaddr *)&addr_in,
+			addrlen)) {
+		/* TODO consider opt.so_reuseaddr */
+		return -EADDRINUSE;
+	}
+#endif
 	__inet_bind(to_inet_sock(sk), &addr_in);
 
 	return 0;
@@ -149,6 +191,8 @@ static int inet_bind_local(struct sock *sk) {
 	struct sockaddr_in addr_in;
 
 	assert(sk);
+
+	memset(&addr_in, 0, sizeof addr_in);
 
 	addr_in.sin_family = AF_INET;
 	addr_in.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -173,7 +217,13 @@ static int __inet_connect(struct inet_sock *in_sk,
 	assert(addr_in != NULL);
 	assert(addr_in->sin_family == AF_INET);
 
+#if defined(NET_NAMESPACE_ENABLED) && (NET_NAMESPACE_ENABLED == 1)
+	ret = rt_fib_source_ip_net_ns(addr_in->sin_addr.s_addr, NULL, &src_ip,
+				((struct sock *)in_sk)->net_ns);
+#else
 	ret = rt_fib_source_ip(addr_in->sin_addr.s_addr, NULL, &src_ip);
+#endif
+
 	if (ret != 0) {
 		return ret;
 	}
@@ -453,6 +503,8 @@ static int inet_setsockopt(struct sock *sk, int level,
 			return -ENOPROTOOPT;
 		}
 		inet->opt.hdrincl = val ? 1 : 0;
+		break;
+	case IP_TOS:
 		break;
 	default:
 		return -ENOPROTOOPT;

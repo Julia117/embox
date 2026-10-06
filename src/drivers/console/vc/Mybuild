@@ -7,7 +7,7 @@ module vga extends embox.driver.diag.diag_api {
 	source "vc_vga.h"
 
 	depends embox.driver.tty.vterm_video
-	depends embox.mem.vmem_api
+	depends embox.compat.posix.sys.mman.mmap_api
 }
 
 module vc {
@@ -19,8 +19,8 @@ module vc {
 	depends vga
 	depends embox.driver.tty.vterm
 	depends embox.driver.input.core
-	depends embox.driver.input.keyboard.keyboard
+	depends embox.driver.input.keyboard.i8042_keyboard
 
-	depends embox.driver.char_dev
+	depends embox.device.char_dev
 }
 

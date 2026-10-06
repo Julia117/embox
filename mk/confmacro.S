@@ -13,16 +13,7 @@
 
 #include "build.conf"
 
-/* Note: $(or __VA_ARGS__) used to extract first arg only (if any). */
-#define option(option, ...) \
-	CONFIG_##option := $(or __VA_ARGS__,1)
-
-#include "options.conf"
-
 #elif defined(__MODS_MK__)
-
-#define option(option, ...) \
-	$(warning Options defined outside "options.conf" are ignored)
 
 #define mod(mod, ...) \
 	MODS_ENABLE += mod $N\
@@ -41,14 +32,8 @@
 #define cmd_platform(mod_name) \
 	mod($(if $(PLATFORM),$(PLATFORM).cmd.##mod_name))
 
+#include "src/util/logging.h"
 #include "mods.conf"
-
-#elif defined(__CONFIG_H__)
-
-#define option(option, ...) \
-	$define CONFIG_##option __FIRST_ARG(__VA_ARGS__)
-
-#include "options.conf"
 
 #elif defined(__CONFIG_LDS_H__)
 
@@ -58,6 +43,10 @@
 
 #define section(name, region, ...) \
 	__section(name, region, __VA_ARGS__)
+
+#define phdr(section_name, type, flags) \
+	$N$define LDS_SECTION_PHDR_TYPE_##section_name type \
+	$N$define LDS_SECTION_PHDR_FLAGS_##section_name flags
 
 #define __defined(macro) \
 	defined(macro)
@@ -93,7 +82,6 @@
 #define ROM(origin, length)  region(ROM, origin, length)
 
 /* Region alias. */
-#define SDRAM RAM
 #define FLASH ROM
 
 #include "lds.conf"

@@ -9,16 +9,14 @@
 #ifndef NET_NETDEVICE_H_
 #define NET_NETDEVICE_H_
 
-//#include <util/array.h>
 #include <assert.h>
 #include <stddef.h>
+#include <stdint.h>
+
+#include <lib/libds/dlist.h>
 #include <net/if.h>
-//#include <arpa/inet.h>
-
+#include <net/net_namespace.h>
 #include <net/skbuff.h>
-#include <util/dlist.h>
-
-//#include <util/hashtable.h>
 
 /**
  * Prototypes
@@ -32,7 +30,7 @@ struct sk_buff;
 #define NET_RX_DROP    1
 
 /** Largest hardware address length */
-#define MAX_ADDR_LEN 16
+#define MAX_ADDR_LEN   16
 
 /**
  * Network device statistics structure.
@@ -75,8 +73,11 @@ typedef struct net_driver {
 	int (*stop)(struct net_device *dev);
 	int (*xmit)(struct net_device *dev, struct sk_buff *skb);
 	int (*set_macaddr)(struct net_device *dev, const void *addr);
+	int (*mdio_read)(struct net_device *dev, uint8_t reg);
+	int (*mdio_write)(struct net_device *dev, uint8_t reg, uint16_t data);
+	void (*set_phyid)(struct net_device *dev, uint8_t phyid);
+	int (*set_speed)(struct net_device *dev, int speed);
 } net_driver_t;
-
 
 /**
  * information for/of device header
@@ -99,45 +100,78 @@ struct net_header_info {
  */
 typedef struct net_device_ops {
 	int (*build_hdr)(struct sk_buff *skb,
-			const struct net_header_info *hdr_info);
-	int (*parse_hdr)(struct sk_buff *skb,
-			struct net_header_info *out_hdr_info);
+	    const struct net_header_info *hdr_info);
 	int (*check_addr)(const void *addr);
 	int (*check_mtu)(int mtu);
 } net_device_ops_t;
+
+struct sock_family_ops;
+struct sock_proto_ops;
+
+//#if IS_ENABLED(CONFIG_CFG80211)
+struct wireless_dev;
+//#endif
 
 /**
  * structure of net device
  */
 typedef struct net_device {
-	struct dlist_head rx_lnk;
 	int index;
-	char name[IFNAMSIZ]; /**< Name of the interface.  */
-	unsigned char dev_addr[MAX_ADDR_LEN]; /**< hw address              */
+	char name[IFNAMSIZ];                   /**< Name of the interface.  */
+	unsigned char dev_addr[MAX_ADDR_LEN];  /**< hw address              */
 	unsigned char broadcast[MAX_ADDR_LEN]; /**< hw bcast address        */
-	unsigned short type; /**< interface hardware type      */
-	unsigned char hdr_len; /**< hardware header length      */
-	unsigned char addr_len; /**< hardware address length      */
-	unsigned int flags; /**< interface flags (a la BSD)   */
-	unsigned int mtu; /**< interface MTU value          */
-	unsigned long base_addr; /**< device I/O address           */
-	unsigned int irq; /**< device IRQ number            */
+	unsigned short type;                   /**< interface hardware type      */
+	unsigned char hdr_len;                 /**< hardware header length      */
+	unsigned char addr_len;                /**< hardware address length      */
+	unsigned int flags;                    /**< interface flags (a la BSD)   */
+	unsigned int mtu;                      /**< interface MTU value          */
+	uintptr_t base_addr;                   /**< device I/O address           */
+	unsigned int irq;                      /**< device IRQ number            */
 	struct net_device_stats stats;
 	const struct net_device_ops *ops; /**< Hardware description  */
 	const struct net_driver *drv_ops; /**< Management operations        */
-	struct sk_buff_head dev_queue;
+	struct dlist_head rx_lnk;         /* for netif_rx list */
+	struct dlist_head tx_lnk;         /* for netif_tx list */
+	struct sk_buff_head dev_queue;    /* rx skb queue */
+	struct sk_buff_head dev_queue_tx; /* tx skb queue */
 	struct net_node *pnet_node;
+#if defined(NET_NAMESPACE_ENABLED) && (NET_NAMESPACE_ENABLED == 1)
+	net_namespace_p net_ns;
+#endif
+
+//#if IS_ENABLED(CONFIG_CFG80211)
+	struct wireless_dev	*nd_ieee80211_ptr;
+//#endif
+
+	const struct sock_family_ops *nd_net_offload;
+	const struct sock_proto_ops *nd_sock_offload;
+
 	void *priv; /**< private data */
 } net_device_t;
+
+
+#define netdev_net_offload(dev)               \
+	({                                        \
+		const struct net_device *__dev = dev; \
+		assert(__dev != NULL);                \
+		__dev->nd_net_offload                 \
+	})
+
+#define netdev_sock_offload(dev)              \
+	({                                        \
+		const struct net_device *__dev = dev; \
+		assert(__dev != NULL);                \
+		__dev->nd_sock_offload                \
+	})
 
 /**
  * Get data private data casted to type
  */
-#define netdev_priv(dev, type) \
+#define netdev_priv(dev)                      \
 	({                                        \
 		const struct net_device *__dev = dev; \
 		assert(__dev != NULL);                \
-		(type *)__dev->priv;                  \
+		__dev->priv;                          \
 	})
 
 /**
@@ -145,15 +179,19 @@ typedef struct net_device {
  * @param name name to find
  * @return NULL is returned if no matching device is found.
  */
-extern struct net_device * netdev_get_by_name(const char *name);
+extern struct net_device *netdev_get_by_name(const char *name);
 
 /**
  * Allocate network device
  * @param name device name format string
  * @param callback to initialize device
  */
-extern struct net_device * netdev_alloc(const char *name,
-		int (*setup)(struct net_device *), size_t priv_size);
+extern struct net_device *netdev_alloc(const char *name,
+    int (*setup)(struct net_device *), size_t priv_size);
+
+extern void dev_net_set(struct net_device *dev, net_namespace_p net_ns);
+extern struct net_device *veth_alloc(struct net_device **v1,
+    struct net_device **v2);
 
 /**
  * Free network device
@@ -175,10 +213,11 @@ extern int netdev_unregister(struct net_device *dev);
 
 /* TODO this use only for pnet */
 extern struct hashtable *netdevs_table;
-#define netdev_foreach(device)                                                      \
-	for (char **dev_name_ptr = hashtable_get_key_first(netdevs_table);              \
-			(dev_name_ptr != NULL) && (device = netdev_get_by_name(*dev_name_ptr)); \
-			dev_name_ptr = hashtable_get_key_next(netdevs_table, dev_name_ptr))
+#define netdev_foreach(device)                                         \
+	for (char **dev_name_ptr = hashtable_get_key_first(netdevs_table); \
+	     (dev_name_ptr != NULL)                                        \
+	     && (device = netdev_get_by_name(*dev_name_ptr));              \
+	     dev_name_ptr = hashtable_get_key_next(netdevs_table, dev_name_ptr))
 
 /**
  * Pepare an interface for use.
@@ -211,14 +250,14 @@ extern int netdev_flag_down(struct net_device *dev, unsigned int flag);
  * @param dev device
  * @param macaddr - MAC devices address
  */
-extern int netdev_set_macaddr(struct net_device *dev,
-		const void *mac_addr);
+extern int netdev_set_macaddr(struct net_device *dev, const void *mac_addr);
 
 extern int netdev_set_irq(struct net_device *dev, int irq_num);
-extern int netdev_set_baseaddr(struct net_device *dev,
-		unsigned long base_addr);
-extern int netdev_set_bcastaddr(struct net_device *dev,
-		const void *bcast_addr);
+extern int netdev_set_baseaddr(struct net_device *dev, unsigned long base_addr);
+extern int netdev_set_bcastaddr(struct net_device *dev, const void *bcast_addr);
 extern int netdev_set_mtu(struct net_device *dev, int mtu);
+
+extern void netif_carrier_off(struct net_device *dev);
+extern void netif_carrier_on(struct net_device *dev);
 
 #endif /* NET_NETDEVICE_H_ */

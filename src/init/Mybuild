@@ -1,43 +1,51 @@
 package embox.init
 
-@DefaultImpl(TextMode)
-abstract module Display {
-
+@DefaultImpl(no_graphic)
+abstract module display_mode {
 }
 
-@DefaultImpl(setup_tty_devfs)
+@DefaultImpl(setup_tty_dev)
 abstract module setup_tty_api {
 }
 
-module GraphicMode extends Display {
-	option string fb_name="fb0"
-	option number vesa_mode=3
+@DefaultImpl(system_abs_time_rtc)
+abstract module system_abs_time_api {
+}
+
+module system_abs_time_rtc extends system_abs_time_api {
+	source "system_abs_time_rtc.c"
+
+	depends embox.driver.rtc.rtc_api
+}
+
+module graphic_init extends display_mode {
+	option boolean manual_settings = false
+
+	option number set_bpp
 	option number set_x
 	option number set_y
-
-	option number fb_init=1
 
 	source "graphic_init.c"
 
 	depends embox.driver.video.fb
 	depends embox.driver.video.fb_videomodes
 	depends embox.driver.video.vesa_modes
-
-	depends embox.driver.diag
 }
 
-module TextMode extends Display {
-
+module no_graphic extends display_mode {
+	source "no_graphic_init.c"
 }
 
-module setup_tty_devfs extends setup_tty_api {
-	source "setup_tty_devfs.c"
+module setup_tty_dev extends setup_tty_api {
+	option string log_level="LOG_ERR"
+
+	source "setup_tty_dev.c"
 
 	depends diag_fd
-	depends embox.compat.posix.fs.file
-	depends embox.compat.posix.idx.dup
+	depends embox.compat.posix.index_descriptor
 	depends embox.compat.posix.util.environ
 	depends embox.kernel.task.api
+	depends embox.device.char_dev
 }
 
 module setup_tty_diag extends setup_tty_api {
@@ -49,9 +57,10 @@ module setup_tty_diag extends setup_tty_api {
 module diag_fd {
 	source "diag_fd.c"
 
+	depends embox.compat.posix.index_descriptor
+	depends embox.kernel.task.idesc
 	depends embox.kernel.task.api
-	depends embox.compat.posix.idx.dup
-	depends embox.fs.idesc
+	depends embox.kernel.task.resource.idesc_table
 }
 
 module start_script {
@@ -64,7 +73,48 @@ module start_script {
 	source "start_script.c"
 
 	depends setup_tty_api
-	depends embox.cmd.sh.shell
-	requires embox.cmd.Shell.commandLine
-	@NoRuntime depends embox.compat.libc.stdio.file_ops
+	depends embox.cmd.sh.shell_registry
+	depends embox.cmd.sh.shell_api
+	depends embox.compat.libc.stdio.printf
+}
+
+module extra_shell {
+	option string shell_name=""
+	option string tty_dev=""
+
+	source "extra_shell.c"
+
+	depends setup_tty_api
+	depends embox.cmd.sh.shell_registry
+	depends embox.cmd.sh.shell_api
+	depends embox.kernel.task.api
+}
+
+@DefaultImpl(no_system_start)
+abstract module system_start {}
+
+module no_system_start extends system_start {
+	source "no_system_start.c"
+}
+
+module system_start_service extends system_start {
+	option string log_level="LOG_NONE"
+
+	option string tty_dev=""
+	option number cmd_max_len=64
+	option number cmd_max_argv=10
+	option boolean stop_on_error = false
+
+	@IncludePath("$(CONF_DIR)")
+	source "system_start_service.c"
+
+	depends setup_tty_api
+	depends display_mode
+}
+
+module system_start_cmd extends system_start {
+	option string log_level="LOG_NONE"
+	option string cmd=""
+
+	source "system_start_cmd.c"
 }

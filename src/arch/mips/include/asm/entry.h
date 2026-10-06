@@ -15,8 +15,7 @@
 
 #ifndef __ASSEMBLER__
 
-#define EBASE 0x80000000
-/* this function must be copied to address EBASE */
+/* this function must be copied to address KSEG0 */
 extern void mips_first_exception_handler(void);
 
 #define MIPS_EXCEPTIONS_QUANTITY  32 /* max number of exceptions handlers */
@@ -28,9 +27,8 @@ enum MIPS_EXCEPTION_TYPE {
 
 typedef  enum MIPS_EXCEPTION_TYPE mips_exception_type_t;
 
-
-/*
- *  type for second exception handlers these handlers is hold in array and called
+/**
+ * type for second exception handlers these handlers is hold in array and called
  * from first exception handler
  */
 typedef void (*second_exception_handler_t)(pt_regs_t *);
@@ -46,11 +44,13 @@ extern void mips_interrupt_handler(void);
 
 #else /* __ASSEMBLER__ */
 
+#include <asm/asm.h>
+
 	.macro SAVE_SOME
 		.set    push
 
 		move    $k0, $sp
-		addi    $k0,  PT_SIZE
+		LONG_ADDI $k0, PT_SIZE
 		LONG_S  $k0, (PT_SP) ($sp); /* save sp in a new frame */
 
 		LONG_S  $2, (PT_R2) ($sp);
@@ -126,7 +126,11 @@ extern void mips_interrupt_handler(void);
 		LONG_L  $31, (PT_RA) ($sp);
 
 		/* Restore special MIPS registers */
-		LONG_L  $k0, PT_STATUS ($sp);
+		mfc0    $k0, $12
+		andi    $k0, $k0, 0xff00 /* preserve interrupt mask */
+		LONG_L  $k1, PT_STATUS ($sp);
+		andi    $k1, $k1, 0x00ff /* load only status bits */
+		or      $k0, $k0, $k1 /* combine them together */
 		mtc0    $k0, $CP0_STATUS
 		LONG_L  $k0, (PT_HI) ($sp);
 		mthi    $k0;

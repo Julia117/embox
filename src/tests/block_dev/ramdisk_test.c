@@ -8,7 +8,7 @@
 
 #include <fcntl.h>
 
-#include <drivers/ramdisk.h>
+#include <drivers/block_dev/ramdisk/ramdisk.h>
 #include <embox/test.h>
 #include <fs/vfs.h>
 #include <mem/page.h>
@@ -21,7 +21,7 @@ EMBOX_TEST_SUITE("fs/ramdisk test");
 #define FS_BLOCKS  124
 
 TEST_CASE("Create and delete ramdisk") {
-	test_assert_zero(err(ramdisk_create(FS_DEV, FS_BLOCKS * PAGE_SIZE())));
+	test_assert_zero(ptr2err(ramdisk_create(FS_DEV, FS_BLOCKS * PAGE_SIZE())));
 
 	test_assert_zero(ramdisk_delete(FS_DEV));
 }

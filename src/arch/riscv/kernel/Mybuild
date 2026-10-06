@@ -1,0 +1,17 @@
+package embox.arch.riscv.kernel
+
+module locore {
+	@NoRuntime depends boot
+	@NoRuntime depends entry
+	@NoRuntime depends smode
+	@NoRuntime depends cpu_idle
+	@NoRuntime depends ipl
+}
+
+module cpu_idle extends embox.arch.cpu_idle {
+	source "cpu_idle.h"
+}
+
+module ipl extends embox.arch.interrupt {
+	source "ipl.h"
+}

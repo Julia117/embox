@@ -5,164 +5,61 @@
  * @author: Anton Bondarev
  */
 #include <assert.h>
-
-#include <util/err.h>
+#include <fcntl.h>
 #include <poll.h>
+#include <sys/stat.h>
+#include <sys/uio.h>
+#include <termios.h>
 
-#include <mem/misc/pool.h>
-#include <fs/idesc.h>
-
-#include <framework/mod/options.h>
-
+#include <drivers/char_dev.h>
+#include <drivers/serial/uart_dev.h>
 #include <drivers/tty.h>
-#include <fs/idesc_serial.h>
+#include <drivers/ttys.h>
+#include <kernel/panic.h>
+#include <kernel/task/resource/idesc.h>
+#include <mem/misc/pool.h>
+#include <util/err.h>
+#include <util/log.h>
 
-
-#define MAX_SERIALS \
-	OPTION_GET(NUMBER, serial_quantity)
-
-//POOL_DEF(pool_serials, struct idesc_serial, MAX_SERIALS);
-
-#define idesc_to_uart(desc) \
-	(((struct file_desc *)desc)->file_info)
-
-static const struct idesc_ops idesc_serial_ops;
-
-struct tty_uart {
-	struct tty tty;
-	struct uart *uart;
-};
-
-POOL_DEF(uart_ttys, struct tty_uart, MAX_SERIALS);
-
-static inline struct uart *tty2uart(struct tty *tty) {
-	struct tty_uart *tu;
-	tu = member_cast_out(tty, struct tty_uart, tty);
-	return tu->uart;
-}
-
-static void uart_out_wake(struct tty *t) {
-	struct uart *uart_dev = tty2uart(t);
-	int ich;
-
-	irq_lock();
-
-	while ((ich = tty_out_getc(t)) != -1)
-		uart_putc(uart_dev, (char) ich);
-
-	irq_unlock();
-}
-
-static void uart_term_setup(struct tty *tty, struct termios *termios) {
-	struct uart *uart_dev = tty2uart(tty);
-	struct uart_params params;
-
-	uart_get_params(uart_dev, &params);
-
-	/* TODO baud rate is ospeed. What's with ispeed ? */
-	params.baud_rate = termios->c_ospeed;
-
-	uart_set_params(uart_dev, &params);
-}
-
-static struct tty_ops uart_tty_ops = {
-	.setup = uart_term_setup,
-	.out_wake = uart_out_wake,
-};
-
-static irq_return_t uart_irq_handler(unsigned int irq_nr, void *data) {
-	struct uart *dev = data;
-
-	if (dev->tty) {
-		while (uart_hasrx(dev))
-			tty_rx_putc(dev->tty, uart_getc(dev), 0);
-	}
-
-	return IRQ_HANDLED;
-}
-
-static int idesc_uart_bind(struct uart *uart, struct idesc *idesc) {
-	struct tty_uart *tu;
-
-	tu = pool_alloc(&uart_ttys);
-	if (!tu) {
-		return -ENOMEM;
-	}
-
-	tty_init(&tu->tty, &uart_tty_ops);
-
-	tu->uart = uart;
-	uart->tty = &tu->tty;
-	uart->tty->idesc = idesc;
-	uart->irq_handler = uart_irq_handler;
-
-	return 0;
-}
-
-static void idesc_uart_unbind(struct uart *uart) {
-	struct tty_uart *tu;
-
-	uart->tty->idesc = NULL;
-	tu = member_cast_out(uart->tty, struct tty_uart, tty);
-	pool_free(&uart_ttys, tu);
-}
-
-struct idesc *idesc_serial_create(struct file_desc *fdesc, struct uart *uart,
-		idesc_access_mode_t mod) {
-	//struct idesc_serial *idesc;
-
-	assert(uart);
-	assert(mod);
-
-	idesc_init(&fdesc->idesc, &idesc_serial_ops, FS_MAY_READ | FS_MAY_WRITE);
-
-	if (idesc_uart_bind(uart, &fdesc->idesc)) {
-		return NULL;
-	}
-
-	if (uart_open(uart)) {
-		idesc_uart_unbind(uart);
-		return NULL;
-	}
-
-	return &fdesc->idesc;
-}
-
-static ssize_t serial_read(struct idesc *idesc, void *buf, size_t nbyte) {
+static ssize_t serial_read(struct char_dev *cdev, void *buf, size_t nbyte,
+    int flags) {
 	struct uart *uart;
 
 	assert(buf);
-	assert(idesc);
-	assert(idesc->idesc_ops == &idesc_serial_ops);
-	assert(idesc->idesc_amode & FS_MAY_READ);
+	assert(cdev);
+	assert(cdev->ops == serial_dev_get_ops());
 
 	if (!nbyte) {
 		return 0;
 	}
 
-	uart = idesc_to_uart(idesc);
+	uart = ((struct serial_dev *)cdev)->uart;
+
 	assert(uart);
 	assert(uart->tty);
 
-	return tty_read(uart->tty, (char *) buf, nbyte);
+	return tty_read(uart->tty, buf, nbyte, flags);
 }
 
-static ssize_t serial_write(struct idesc *idesc, const void *buf, size_t nbyte) {
-	int ch;
+static ssize_t serial_write(struct char_dev *cdev, const void *buf,
+    size_t nbyte, int flags) {
 	struct uart *uart;
-	size_t written, left = nbyte;
+	size_t written;
+	size_t left;
+	int ch;
 
 	assert(buf);
-	assert(idesc);
-	assert(idesc->idesc_ops == &idesc_serial_ops);
-	assert(idesc->idesc_amode & FS_MAY_WRITE);
+	assert(cdev);
+	assert(cdev->ops == serial_dev_get_ops());
 
-	uart = idesc_to_uart(idesc);
+	left = nbyte;
+	uart = ((struct serial_dev *)cdev)->uart;
+
 	assert(uart);
 	assert(uart->tty);
 
 	do {
-		written = tty_write(uart->tty, buf, left);
+		written = tty_write(uart->tty, buf, left, flags);
 
 		while (-1 != (ch = tty_out_getc(uart->tty))) {
 			uart_putc(uart, ch);
@@ -175,45 +72,32 @@ static ssize_t serial_write(struct idesc *idesc, const void *buf, size_t nbyte) 
 	return (ssize_t)nbyte;
 }
 
-static void serial_close(struct idesc *idesc) {
-	struct uart *uart;
-	int res;
-
-	assert(idesc);
-	assert(idesc->idesc_ops == &idesc_serial_ops);
-
-	uart = idesc_to_uart(idesc);
-	assert(uart);
-	res = uart_close(uart);
-	assert(res == 0); /* TODO */
-
-	idesc_uart_unbind(uart);
-
-	file_desc_destroy((struct file_desc *)idesc);
-}
-
-static int serial_ioctl(struct idesc *idesc, int request, void *data) {
+static int serial_ioctl(struct char_dev *cdev, int request, void *data) {
 	struct uart *uart;
 
-	assert(idesc);
-	assert(idesc->idesc_ops == &idesc_serial_ops);
+	assert(cdev);
+	assert(cdev->ops == serial_dev_get_ops());
 
-	uart = idesc_to_uart(idesc);
+	uart = ((struct serial_dev *)cdev)->uart;
+
 	assert(uart);
 
 	return tty_ioctl(uart->tty, request, data);
 }
 
-static int serial_status(struct idesc *idesc, int mask) {
+static int serial_status(struct char_dev *cdev, int mask) {
 	struct uart *uart;
 	int res = 0;
 
-	assert(idesc);
+	assert(cdev);
+	assert(cdev->ops == serial_dev_get_ops());
 
 	if (!mask) {
 		return 0;
 	}
-	uart = idesc_to_uart(idesc);
+
+	uart = ((struct serial_dev *)cdev)->uart;
+
 	assert(uart);
 
 	if (mask & POLLIN) {
@@ -234,20 +118,54 @@ static int serial_status(struct idesc *idesc, int mask) {
 	return res;
 }
 
-static int serial_fstat(struct idesc *data, void *buff) {
-	struct stat *st = buff;
+static void serial_close(struct char_dev *cdev) {
+	struct uart *uart;
+	int err;
 
-	st->st_mode = S_IFCHR;
+	assert(cdev);
+	assert(cdev->ops == serial_dev_get_ops());
 
-	return 0;
+	uart = ((struct serial_dev *)cdev)->uart;
 
+	assert(uart);
+
+	uart->tty = NULL;
+
+	if ((err = uart_close(uart))) {
+		log_crit("failed to close UART");
+	}
 }
 
-static const struct idesc_ops idesc_serial_ops = {
-		.read = serial_read,
-		.write = serial_write,
-		.ioctl = serial_ioctl,
-		.close = serial_close,
-		.status = serial_status,
-		.fstat = serial_fstat,
+static int serial_open(struct char_dev *cdev, struct idesc *idesc) {
+	struct serial_dev *tty_dev;
+	struct uart *uart;
+
+	assert(cdev);
+	assert(cdev->ops == serial_dev_get_ops());
+
+	tty_dev = ((struct serial_dev *)cdev);
+	uart = tty_dev->uart;
+
+	assert(uart);
+
+	tty_init(&tty_dev->tty, uart_tty_get_ops());
+
+	uart->tty = &tty_dev->tty;
+
+	if (uart->irq_handler == NULL) {
+		uart->irq_handler = uart_irq_handler;
+	}
+
+	idesc_set_dev_waitq(idesc, &tty_dev->tty.tty_waitq);
+
+	return uart_open(uart);
+}
+
+const struct char_dev_ops __serial_cdev_ops = {
+    .read = serial_read,
+    .write = serial_write,
+    .ioctl = serial_ioctl,
+    .status = serial_status,
+    .close = serial_close,
+    .open = serial_open,
 };

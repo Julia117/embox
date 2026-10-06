@@ -1,0 +1,22 @@
+#ifndef LIBCXX_STANDALONE_CTIME_
+#define LIBCXX_STANDALONE_CTIME_
+
+#include <time.h>
+
+namespace std {
+	using ::size_t;
+	using ::clock_t;
+	using ::time_t;
+	using ::tm;
+	using ::clock;
+	using ::ctime;
+	using ::gmtime;
+	using ::mktime;
+	using ::strftime;
+	using ::time;
+	using ::asctime;
+	using ::localtime;
+	using ::difftime;
+} // namespace std
+
+#endif // LIBCXX_STANDALONE_CTIME_

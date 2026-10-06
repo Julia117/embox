@@ -1,18 +1,12 @@
-
 #include <asm-generic/embox.lds.h>
 
-#ifndef OUTPUT_FORMAT_STRING
-#define OUTPUT_FORMAT_STRING "elf32-bigmips"
-#endif
-
-OUTPUT_FORMAT(OUTPUT_FORMAT_STRING)
+#undef mips
 OUTPUT_ARCH(mips)
 
 ENTRY(_start)
 
 MEMORY {
-	MEMORY_REGION(RAM)
-	MEMORY_REGION(ROM)
+	#include <regions.lds.h>
 }
 
 _ram_base = ORIGIN(RAM);
@@ -25,16 +19,5 @@ SECTIONS {
 		ALIGNMENT();
 		*(.text)
 		*(.text.*)
-	}
-
-	/DISCARD/ : {
-		*(.MIPS.options)
-		*(.options)
-		*(.pdr)
-		*(.reginfo)
-		*(.comment)
-		*(.note)
-		*(.mdebug.* .gnu.attributes)
-	}
+	} SECTION_REGION(text) :text
 }
-

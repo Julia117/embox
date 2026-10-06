@@ -8,26 +8,25 @@
 #include <errno.h>
 #include <stddef.h>
 #include <sys/types.h>
-#include <fs/kfile.h>
 
-struct file_desc *kopen(struct node *node, int flag) {
+struct inode;
+struct file_desc;
+struct stat;
+
+struct idesc *kopen(struct inode *node, int flag) {
 	return NULL;
 }
 
-ssize_t kwrite(const void *buf, size_t size, struct file_desc *file) {
+ssize_t kwrite(struct file_desc *file, const void *buf, size_t size) {
 	return -ENOSYS;
 }
 
-ssize_t kread(void *buf, size_t size, struct file_desc *desc) {
+ssize_t kread(struct file_desc *desc, void *buf, size_t size) {
 	return -ENOSYS;
 }
 
 
 void kclose(struct file_desc *desc) {
-}
-
-int kseek(struct file_desc *desc, long int offset, int origin) {
-	return -ENOSYS;
 }
 
 int kfstat(struct file_desc *desc, struct stat *buff) {
@@ -38,8 +37,6 @@ int kioctl(struct file_desc *fp, int request, void *data) {
 	return -ENOSYS;
 }
 
-struct node;
-
-int ktruncate(struct node *node, off_t length) {
+int ktruncate(struct inode *node, off_t length) {
 	return -ENOSYS;
 }

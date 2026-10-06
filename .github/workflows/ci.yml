@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+  workflow_dispatch:
+  pull_request_review:
+    types: [submitted]
+jobs:
+  ci:
+    if: |
+      github.event_name != 'pull_request_review' ||
+      (
+        github.event.pull_request.head.repo.full_name != github.repository &&
+        github.event.review.state == 'approved'
+      )
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        template:
+          - x86/user_apps
+          - x86/test/lang
+          - x86/test/units
+          - x86/test/packetdrill
+          - aarch64/test/units
+          - riscv64/test/cxx
+          - riscv64/test/units
+          - mips/third_party
+          - mips64/test/cxx
+          - ppc/qemu
+          - sparc/qemu
+          - microblaze/qemu
+          - usermode86/debug
+          - project/opencv/vexpress-a9
+          - project/qt4/arm_qemu_fb_small
+          - platform/stm32/f4/stm32f4-discovery
+    container:
+      image: ghcr.io/embox/emdocker-test/emdocker-test:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.github_token }}
+      options: --privileged -v /:/host
+    steps:
+      - uses: actions/checkout@v1
+      - run: ./scripts/continuous/prepare.sh ${{matrix.template}}
+      - run: make confload-${{matrix.template}}
+      - run: make -j $(nproc)
+      - run: ./scripts/continuous/run.sh ${{matrix.template}}
+  ci-old:
+    if: |
+      github.event_name != 'pull_request_review' ||
+      (
+        github.event.pull_request.head.repo.full_name != github.repository &&
+        github.event.review.state == 'approved'
+      )
+    runs-on: ubuntu-24.04 # Embox NFS write test fails with ubuntu 18.04: "RPC: Can't decode result"
+    strategy:
+      fail-fast: false
+      matrix:
+        template:
+          - x86/smp
+          - x86/test/net
+          - x86/test/fs
+          - x86/test/qt-vnc
+    container:
+      image: ghcr.io/embox/emdocker-test/emdocker-test:ubuntu16
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.github_token }}
+      options: --privileged -v /:/host
+    steps:
+      - uses: actions/checkout@v1
+# x86/test/net fails on caching
+#      - uses: actions/cache@v2
+#        with:
+#          path: |
+#            mk/.cache
+#          key: mybuild-${{ hashFiles('**/Mybuild') }}-${{ hashFiles('**/*.my') }}
+#      - run: scripts/continuous/touch-mk-cache.sh
+      - run: chroot /host modprobe nfsd
+        if: matrix.template == 'x86/test/fs'
+      - run: ./scripts/continuous/prepare.sh ${{matrix.template}}
+      - run: make confload-${{matrix.template}}
+      - run: make -j $(nproc)
+      - run: ./scripts/continuous/run.sh ${{matrix.template}}

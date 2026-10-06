@@ -1,0 +1,18 @@
+package embox.driver.net
+
+module lan91c111 {
+	option string log_level="LOG_NONE"
+	option number base_addr
+
+	source "lan91c111.h"
+	source "lan91c111.c"
+
+	depends embox.net.skbuff
+	depends embox.net.l2.ethernet
+	depends embox.kernel.irq_api
+	depends embox.net.dev
+	depends embox.net.core
+	depends embox.net.entry_api
+	depends embox.net.util.show_packet
+	depends embox.driver.periph_memory
+}

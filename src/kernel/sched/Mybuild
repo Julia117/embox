@@ -1,6 +1,7 @@
 package embox.kernel.sched
 
 module sched {
+	option string log_level="LOG_NONE"
 	source "sched_start.c"
 	depends idle
 	depends boot
@@ -17,6 +18,7 @@ module sched {
 
 	depends wait_queue
 
+	depends embox.kernel.timer.strategy.api
 	depends embox.kernel.sched.current.api
 }
 
@@ -26,7 +28,6 @@ module schedee {
 	depends strategy.runq.api
 	depends priority.priority
 	depends affinity.affinity
-	depends timing.timing
 }
 
 @DefaultImpl(sched_ticker_preempt)
@@ -45,7 +46,7 @@ module sched_ticker_stub extends sched_ticker {
 module wait_queue {
 	source "waitq.c"
 
-	depends embox.util.DList
+	@NoRuntime depends embox.lib.libds
 	depends waitq_protect_link
 }
 
@@ -54,23 +55,19 @@ abstract module waitq_protect_link { }
 
 module waitq_protect_link_stub extends waitq_protect_link {
 	source "waitq_protect_link_stub.c"
+	source "waitq_protect_link_stub.h"
 }
 
 module waitq_protect_link_store extends waitq_protect_link {
-	source "waitq_protect_link.c"
-
-	depends waitq_protect_link_thread_plugin
+	source "waitq_protect_link_store.c"
+	source "waitq_protect_link_store.h"
 }
 
-module waitq_protect_link_thread_plugin extends embox.kernel.thread.thread_wait {
-	source "waitq_protect_link_thread_plugin.c"
-	source "waitq_protect_link_thread_plugin.h"
-}
-
-@DefaultImpl(idle_thread)
+@DefaultImpl(idle_light)
 abstract module idle { }
 
 module idle_thread extends idle {
+	option string log_level="LOG_NONE"
 	source "idle_thread.c"
 
 	depends embox.kernel.thread.core
@@ -83,10 +80,11 @@ module idle_light extends idle {
 	@NoRuntime depends embox.kernel.lthread.lthread
 }
 
-@DefaultImpl(boot_thread)
+@DefaultImpl(boot_light)
 abstract module boot { }
 
 module boot_thread extends boot {
+	option string log_level="LOG_NONE"
 	source "boot_thread.c"
 
 	depends embox.kernel.thread.core

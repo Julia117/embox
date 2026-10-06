@@ -1,11 +1,26 @@
 package embox.driver.tty
 
 module serial {
-	source "serial_repo.c"
+	option string log_level="LOG_ERR"
+
+	source "ttys_processing.c"
+	source "ttys_term.c"
+	source "ttys.c"
 	source "idesc_serial.c"
 
-	option number serial_quantity = 1
+	@IncludeExport(path="drivers")
+	source "ttys.h"
 
-	depends tty_repo
+	option number serial_quantity = 1
+	option number idesc_serial_quantity = 1
+
 	depends tty
+	depends embox.device.char_dev
+}
+
+module serial_stub {
+	source "ttys_stub.c"
+
+	@IncludeExport(path="drivers", target_name="ttys.h")
+	source "ttys_stub.h"
 }

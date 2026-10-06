@@ -2,9 +2,12 @@ package embox.net
 
 module tcp {
 	option boolean verify_chksum=true
+	option string log_level="LOG_NONE"
+    /* finwait2 timoeout in ms / 0=wait forever */
+    option number tcp_finwait2_timeout_ms = 60000
 	source "tcp.c"
 
-	depends embox.fs.idesc_event
+	depends embox.kernel.task.idesc_event
 	depends embox.net.skbuff
 	depends embox.net.sock
 	depends embox.net.lib.tcp
@@ -14,7 +17,7 @@ module tcp {
 	depends embox.compat.libc.assert
 	depends embox.compat.libc.str
 	depends embox.kernel.timer.sys_timer
-	depends embox.framework.net.proto
+	depends embox.net.proto
 }
 
 module udp {
@@ -26,5 +29,5 @@ module udp {
 	depends embox.net.icmpv4
 	depends embox.net.sock
 	depends embox.compat.libc.assert
-	depends embox.framework.net.proto
+	depends embox.net.proto
 }

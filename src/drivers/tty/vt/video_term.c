@@ -12,10 +12,9 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <termios.h>
-#include <util/array.h>
+#include <lib/libds/array.h>
 #include <util/member.h>
 #include <drivers/video_term.h>
-#include <drivers/keyboard.h>
 #include <drivers/input/input_dev.h>
 #include <drivers/input/keymap.h>
 #include <drivers/tty.h>
@@ -59,7 +58,7 @@ int vterm_input(struct vterm *vt, struct input_event *event) {
 	int keycode;
 
 	keycode = keymap_kbd(event);
-	if (keycode < 0) {
+	if (keycode < 0 || !(event->type & KBD_KEY_PRESSED)) {
 		return 0;
 	}
 

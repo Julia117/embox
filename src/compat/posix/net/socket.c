@@ -18,16 +18,19 @@
 #include <net/sock.h>
 #include <kernel/task.h>
 
-#include <fs/index_descriptor.h>
-#include <fs/idesc.h>
+#include <kernel/task/resource/index_descriptor.h>
+#include <kernel/task/resource/idesc.h>
 #include <net/sock.h>
 #include <net/socket/socket_desc.h>
 
-#include <kernel/task/idesc_table.h>
 #include <kernel/task/resource/idesc_table.h>
-#include <util/sys_log.h>
+#include <util/log.h>
 
 #include <util/err.h>
+
+#include <util/macro.h>
+
+#include <net/net_namespace.h>
 
 static int get_index(struct sock *sk) {
 	struct idesc_table *it;
@@ -53,8 +56,8 @@ int socket(int domain, int type, int protocol) {
 	struct sock *sk;
 
 	sk = ksocket(domain, type, protocol);
-	if (err(sk) != 0) {
-		return SET_ERRNO(-err(sk));
+	if (ptr2err(sk) != 0) {
+		return SET_ERRNO(-ptr2err(sk));
 	}
 
 	sockfd = get_index(sk);
@@ -62,7 +65,9 @@ int socket(int domain, int type, int protocol) {
 		ksocket_close(sk);
 		return SET_ERRNO(EMFILE);
 	}
-
+#if defined(NET_NAMESPACE_ENABLED) && (NET_NAMESPACE_ENABLED == 1)
+	assign_net_ns(sk->net_ns, get_net_ns());
+#endif
 	return sockfd;
 }
 /* fcntl */
@@ -135,6 +140,9 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
 		return SET_ERRNO(-ret);
 	}
 
+#if defined(NET_NAMESPACE_ENABLED) && (NET_NAMESPACE_ENABLED == 1)
+	assign_net_ns(new_sk->net_ns, sk->net_ns);
+#endif
 	new_sockfd = get_index(new_sk);
 	if (new_sockfd < 0) {
 		ksocket_close(new_sk);
@@ -162,7 +170,7 @@ ssize_t send(int sockfd, const void *buff, size_t size,
 
 	/* TODO remove this */
 	if (flags & (MSG_EOR | MSG_OOB)) {
-		LOG_ERROR("send", "MSG_EOR, MSG_OOB flags are not supported");
+		log_error("MSG_EOR, MSG_OOB flags are not supported");
 		return SET_ERRNO(EOPNOTSUPP);
 	}
 
@@ -201,7 +209,7 @@ ssize_t sendto(int sockfd, const void *buff, size_t size,
 
 	/* TODO remove this */
 	if (flags != 0) {
-		LOG_ERROR("sendto", "flags are not supported");
+		log_error("flags are not supported");
 		return SET_ERRNO(EOPNOTSUPP);
 	}
 
@@ -235,7 +243,7 @@ ssize_t sendmsg(int sockfd, const struct msghdr *msg, int flags) {
 
 	/* TODO remove this */
 	if (flags != 0) {
-		LOG_ERROR("sendmsg", "flags are not supported");
+		log_error("flags are not supported");
 		return SET_ERRNO(EOPNOTSUPP);
 	}
 
@@ -262,14 +270,17 @@ ssize_t recv(int sockfd, void *buff, size_t size, int flags) {
 
 	socket_idesc_check(sockfd, sk);
 
-	if (sk->shutdown_flag & (SHUT_RD + 1))
+	if (sk->shutdown_flag & (SHUT_RD + 1)) {
 		return SET_ERRNO(EPIPE);
+	}
 
+#if 0
 	/* TODO remove this */
 	if (flags != 0) {
-		LOG_ERROR("recv", "flags are not supported");
+		log_error("flags are not supported");
 		return SET_ERRNO(EOPNOTSUPP);
 	}
+#endif
 
 	msg.msg_name = NULL;
 	msg.msg_namelen = 0;
@@ -287,6 +298,7 @@ ssize_t recv(int sockfd, void *buff, size_t size, int flags) {
 
 	return ret;
 }
+
 /* open? read */
 ssize_t recvfrom(int sockfd, void *buff, size_t size,
 		int flags, struct sockaddr *addr,
@@ -299,14 +311,17 @@ ssize_t recvfrom(int sockfd, void *buff, size_t size,
 
 	socket_idesc_check(sockfd, sk);
 
-	if (sk->shutdown_flag & (SHUT_RD + 1))
+	if (sk->shutdown_flag & (SHUT_RD + 1)) {
 		return SET_ERRNO(EPIPE);
+	}
 
+#if 0
 	/* TODO remove this */
 	if (flags != 0) {
-		LOG_ERROR("recv", "flags are not supported");
+		log_error("flags are not supported");
 		return SET_ERRNO(EOPNOTSUPP);
 	}
+#endif
 
 	msg.msg_name = (void *)addr;
 	msg.msg_namelen = addrlen != NULL ? *addrlen : 0;
@@ -348,7 +363,7 @@ ssize_t recvmsg(int sockfd, struct msghdr *msg, int flags) {
 
 	/* TODO remove this */
 	if (flags != 0) {
-		LOG_ERROR("recv", "flags are not supported");
+		log_error("flags are not supported");
 		return SET_ERRNO(EOPNOTSUPP);
 	}
 

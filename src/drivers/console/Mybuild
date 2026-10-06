@@ -20,10 +20,9 @@ module fbcon {
 
 	depends embox.driver.video.fonts
 	depends embox.driver.tty.vterm
-	depends embox.driver.input.keyboard.keyboard
 	depends mpx_simple
-	depends embox.cmd.user.login //TODO why it required?
+	depends embox.cmd.user.login //fbcon start `login` at every console
 
-	depends embox.cmd.sh.tish
+	depends embox.cmd.sh.shell_api
+	depends embox.init.graphic_init
 }
-

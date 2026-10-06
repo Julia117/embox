@@ -20,12 +20,12 @@
 #include <kernel/sched.h>
 #include <kernel/task.h>
 
-#include <kernel/task/idesc_table.h>
-#include <fs/index_descriptor.h>
-#include <fs/idesc.h>
-#include <fs/idesc_event.h>
-#include <fs/poll_table.h>
-#include <util/array.h>
+#include <kernel/task/resource/idesc_table.h>
+#include <kernel/task/resource/index_descriptor.h>
+#include <kernel/task/resource/idesc.h>
+#include <kernel/task/resource/idesc_event.h>
+#include <kernel/task/resource/poll_table.h>
+#include <lib/libds/array.h>
 
 static int select_fds2pt(struct idesc_poll_table *pt,
 		int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds) {

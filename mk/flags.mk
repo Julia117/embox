@@ -1,5 +1,22 @@
+ifndef __flags_mk
+__flags_mk := 1
 
 include mk/core/common.mk
+
+override undefine CFLAGS
+override undefine CXXFLAGS
+override undefine CPPFLAGS
+override undefine ASFLAGS
+override undefine ARFLAGS
+override undefine LDFLAGS
+
+COMPILER ?= gcc
+
+include $(MKGEN_DIR)/build.mk
+
+ifndef ARCH
+$(error ARCH is not defined)
+endif
 
 CFLAGS ?=
 CXXFLAGS ?=
@@ -10,9 +27,8 @@ LDFLAGS ?=
 
 CROSS_COMPILE ?=
 
-CC      := $(CROSS_COMPILE)gcc
-CPP     := $(CC) -E
-CXX     := $(CROSS_COMPILE)g++
+GCC     := $(CROSS_COMPILE)gcc
+GXX     := $(CROSS_COMPILE)g++
 AR      := $(CROSS_COMPILE)ar
 AS      := $(CROSS_COMPILE)as
 LD      := $(CROSS_COMPILE)ld
@@ -21,193 +37,190 @@ OBJDUMP := $(CROSS_COMPILE)objdump
 OBJCOPY := $(CROSS_COMPILE)objcopy
 SIZE    := $(CROSS_COMPILE)size
 
-comma_sep_list = $(subst $(\s),$(,),$(strip $1))
-
-COVERAGE_CFLAGS ?= -finstrument-functions \
-   -finstrument-functions-exclude-function-list=$(call comma_sep_list, \
-			symbol_lookup \
-			__cyg_profile_func_enter \
-			__cyg_profile_func_exit \
-			__coverage_func_enter \
-			__coverage_func_exit \
-			bitmap_set_bit)
-
-PROFILING_CFLAGS ?= -finstrument-functions \
-   -finstrument-functions-exclude-function-list=$(call comma_sep_list, \
-			__cyg_profile_func_enter \
-			__cyg_profile_func_exit \
-			cyg_tracing_profiler_enter \
-			cyg_tracing_profiler_exit \
-			__coverage_func_enter \
-			__coverage_func_exit \
-			trace_block_func_enter \
-			trace_block_func_exit \
-			get_trace_block_hash \
-			cmp_trace_blocks \
-			trace_block_enter \
-			trace_block_leave \
-			__tracepoint_handle \
-			get_profiling_mode \
-			set_profiling_mode)
-
-EXTERNAL_MAKE = \
-	$(MAKE) -C $(dir $(my_file)) $(EXTERNAL_MAKE_FLAGS)
-
-EXTERNAL_MAKE_PRO = \
-	$(MKDIR) $(mod_build_dir) && \
-	$(CP) $(EXTERNAL_BUILD_DIR)/third_party/qt/core/install/.qmake.cache $(mod_build_dir) && \
-	$(EXTERNAL_BUILD_DIR)/third_party/qt/core/install/bin/qmake \
-		INCLUDEPATH+='$(subst -I,,$(BUILD_DEPS_CPPFLAGS))' \
-		LIBS+='$(BUILD_DEPS_LDFLAGS)' \
-		$${TARGET:-$(dir $(my_file))} \
-		-o $(abspath $(mod_build_dir))/Makefile && \
-	$(MAKE) -C $(mod_build_dir) $(EXTERNAL_MAKE_FLAGS)
-
-EXTERNAL_MAKE_FLAGS = \
-	MAKEFLAGS= \
-	$(foreach path_var, \
-			ROOT_DIR \
-			EMBOX_ROOT_DIR \
-			CONF_DIR \
-			TEMPLATES_DIR \
-			SRC_DIR \
-			THIRDPARTY_DIR \
-			PLATFORM_DIR \
-			SUBPLATFORM_TEMPLATE_DIR \
-			EXTERNAL_BUILD_DIR \
-			DOC_DIR \
-			BIN_DIR \
-			OBJ_DIR \
-			GEN_DIR \
-			SRCGEN_DIR \
-			MKGEN_DIR \
-			AUTOCONF_DIR \
-			ROOTFS_DIR \
-			INCUDE_INSTALL_DIR \
-			USER_ROOTFS_DIR \
-			DOT_DIR \
-			DOCS_OUT_DIR \
-			CACHE_DIR, \
-		$(path_var)=$(abspath $($(path_var)))) \
-	BUILD_DIR=$(abspath $(mod_build_dir)) \
-	EMBOX_ARCH='$(ARCH)' \
-	EMBOX_CROSS_COMPILE='$(CROSS_COMPILE)' \
-	EMBOX_MAKEFLAGS='$(MAKEFLAGS)' \
-	EMBOX_CFLAGS='$(CFLAGS)' \
-	EMBOX_CXXFLAGS='$(CXXFLAGS)' \
-	EMBOX_DEPS_CPPFLAGS='$(BUILD_DEPS_CPPFLAGS)' \
-	EMBOX_DEPS_LDFLAGS='$(BUILD_DEPS_LDFLAGS)' \
-	EMBOX_CPPFLAGS='$(EMBOX_EXPORT_CPPFLAGS) $(BUILD_DEPS_CPPFLAGS)' \
-	EMBOX_LDFLAGS='$(LDFLAGS) $(BUILD_DEPS_LDFLAGS)'
-
-mod_build_dir = $(EXTERNAL_BUILD_DIR)/$(mod_path)
-
-EXTERNAL_OBJ_DIR =^BUILD/extbld/^MOD_PATH#
-
-ifneq ($(patsubst N,0,$(patsubst n,0,$(or $(value NDEBUG),0))),0)
-override CPPFLAGS += -DNDEBUG
-override NDEBUG := 1
+ifeq ($(COMPILER),clang)
+CC  := clang
+CXX := clang++
 else
-override NDEBUG :=
+CC  := $(GCC)
+CXX := $(GXX)
+endif
+CPP := $(CC) -E
+
+EMBOX_GCC := $(TOOLCHAIN_DIR)/embox-gcc
+EMBOX_GXX := $(TOOLCHAIN_DIR)/embox-g++
+
+EMBOX_CLANG   := $(TOOLCHAIN_DIR)/embox-clang
+EMBOX_CLANGXX := $(TOOLCHAIN_DIR)/embox-clang++
+
+ifeq ($(COMPILER),clang)
+EMBOX_CC  := $(EMBOX_CLANG)
+EMBOX_CXX := $(EMBOX_CLANGXX)
+else
+EMBOX_CC  := $(EMBOX_GCC)
+EMBOX_CXX := $(EMBOX_GXX)
 endif
 
-ifdef OPTIMIZE
-
-override OPTIMIZE := $(strip $(OPTIMIZE:-O%=%))
-__optimize_valid_values := s 0 1 2 3 4 5 99
-__optimize_invalid := $(filter-out $(__optimize_valid_values),$(OPTIMIZE))
-ifneq ($(__optimize_invalid),)
-$(error Invalid value for OPTIMIZE flag: $(__optimize_invalid). \
-  Valid values are: $(__optimize_valid_values))
+ifeq ($(COMPILER),gcc)
+GCC_VERSION_MAJOR := $(shell echo __GNUC__ | $(GCC) -E -P -)
+else
+GCC_VERSION_MAJOR :=
 endif
 
-ifneq ($(words $(OPTIMIZE)),1)
-$(error Only single value for OPTIMIZE flag is permitted)
+ifeq ($(COMPILER),clang)
+CLANG_VERSION_MAJOR := $(shell echo __clang_major__ | clang -E -P -)
+else
+CLANG_VERSION_MAJOR :=
 endif
 
-override CFLAGS += -O$(OPTIMIZE)
-override CXXFLAGS += -O$(OPTIMIZE)
-
-endif
-
-# Expand user defined flags and append them after default ones.
-
-__srcgen_includes_fn = \
-	$(addprefix $(call $1,$(SRCGEN_DIR))/, \
-		src/include \
-		src/arch/$(ARCH)/include)
-__srcgen_includes := $(call __srcgen_includes_fn,id)
-$(and $(shell $(MKDIR) $(__srcgen_includes)),)
-
-cppflags_fn = \
-	-U__linux__ -Ulinux -U__linux \
-	-D__EMBOX__ \
-	-D__unix \
-	-D"__impl_x(path)=<../path>" \
-	-imacros $(call $1,$(AUTOCONF_DIR))/config.h \
-	-I$(call $1,$(INCUDE_INSTALL_DIR)) \
-	-I$(call $1,$(SRC_DIR))/include \
-	-I$(call $1,$(SRC_DIR))/arch/$(ARCH)/include \
-	-I$(call $1,$(SRCGEN_DIR))/include \
-	-I$(call $1,$(SRCGEN_DIR))/src/include \
-	$(addprefix -I,$(call __srcgen_includes_fn,$1)) \
-	$(if $(value PLATFORM),-I$(call $1,$(PLATFORM_DIR))/$(PLATFORM)/include) \
-	-I$(call $1,$(SRC_DIR))/compat/linux/include \
-	-I$(call $1,$(SRC_DIR))/compat/posix/include \
-	-I$(call $1,$(SRC_DIR))/compat/libc/include \
-	-nostdinc \
-	-MMD -MP# -MT $@ -MF $(@:.o=.d)
-
+#
 # Preprocessor flags
-cppflags := $(CPPFLAGS)
-override CPPFLAGS  = $(call cppflags_fn,id) $(cppflags)
-EMBOX_EXPORT_CPPFLAGS = $(call cppflags_fn,abspath)
+#
+cppflags := \
+	-U__linux__ -Ulinux -U__linux \
+	-D__unix \
+	-D__EMBOX__ \
+	-D__EMBOX_VERSION__=\"$(EMBOX_VERSION)\"
 
-override COMMON_FLAGS := -pipe
-debug_prefix_map_supported:=$(shell $(CPP) /dev/zero --debug-prefix-map=./= 2>/dev/null && echo true)
-ifneq ($(debug_prefix_map_supported),)
-override COMMON_FLAGS += --debug-prefix-map=`pwd`=
-override COMMON_FLAGS += --debug-prefix-map=./=
+ifdef PLATFORM
+cppflags += -D__EMBOX_PLATFORM__$(subst -,_,$(PLATFORM))__
 endif
 
+cppflags += \
+	-I$(INCLUDE_INSTALL_DIR) \
+	-I$(SRCGEN_DIR)/include \
+	-I$(SRC_DIR)/include \
+	-I$(SRC_DIR)/arch/$(ARCH)/include \
+	-I$(SRC_DIR)/compat/linux/include \
+	-I$(SRC_DIR)/compat/posix/include \
+	-I$(SRC_DIR)/compat/bsd/include \
+	-I$(SRC_DIR)/compat/libc/include
+
+# XXX. Required for "@Generated" headers. See mk/ugly.mk.
+cppflags += -I$(SRCGEN_DIR)/src/include
+$(and $(shell $(MKDIR) $(SRCGEN_DIR)/src/include),)
+
+cppflags += -nostdinc -MMD -MP $(CPPFLAGS)
+CPPFLAGS := $(cppflags)
+
+EMBOX_EXPORT_CPPFLAGS := $(filter-out -D%" -D%',$(cppflags))
+
+#
+# Common compilation flags
+#
+common_flags := -pipe
+
+file_prefix_map_supported := $(shell $(CPP) /dev/zero -ffile-prefix-map=./=. 2>/dev/null && echo true)
+ifeq ($(file_prefix_map_supported),true)
+ifdef DIST_GEN
+# -ffile-prefix-map is an alias for both -fdebug-prefix-map and -fmacro-prefix-map
+common_flags += -ffile-prefix-map=`pwd`=.
+else
+# -fdebug-prefix-map complicates debugging of extbld projects,
+# it does not affect the code size unless you use __symbol_table
+# from embox.lib.debug.symbol module,
+# so only -fmacro-prefix-map is used (to reduce the code size)
+common_flags += -fmacro-prefix-map=`pwd`=.
+endif # DIST_GEN
+endif
+
+#
 # Assembler flags
-asflags := $(CFLAGS)
-override ASFLAGS = $(COMMON_FLAGS)
-override ASFLAGS += $(asflags)
+#
+asflags := $(common_flags) $(CFLAGS)
+ASFLAGS := $(asflags)
 
-override COMMON_CCFLAGS := $(COMMON_FLAGS)
-override COMMON_CCFLAGS += -fno-strict-aliasing -fno-common
-override COMMON_CCFLAGS += -Wall -Werror
-override COMMON_CCFLAGS += -Wundef -Wno-trigraphs -Wno-char-subscripts
-override COMMON_CCFLAGS += -Wformat
+#
+# Common C/C++ compiler flags
+#
+common_ccflags := $(common_flags)
+common_ccflags += -fno-strict-aliasing
+common_ccflags += -fno-common
+common_ccflags += -fno-stack-protector
+common_ccflags += -fno-pic
+common_ccflags += -Wall -Werror -Wformat -Wundef
+common_ccflags += -Wno-trigraphs -Wno-char-subscripts
 
-cxxflags := $(CXXFLAGS)
-override CXXFLAGS = $(COMMON_CCFLAGS)
-#override CXXFLAGS += -fno-rtti
-#override CXXFLAGS += -fno-exceptions
-#override CXXFLAGS += -fno-threadsafe-statics
-override CXXFLAGS += -I$(SRC_DIR)/compat/cxx/include
-#	C++ has build-in type bool
-override CXXFLAGS += -DSTDBOOL_H_
-override CXXFLAGS += $(cxxflags)
+ifeq ($(COMPILER),gcc)
+# This option conflicts with some third-party stuff, so we disable it.
+CFLAGS += -Wno-misleading-indentation
+# GCC 6 seems to have many library functions declared as __nonnull__, like
+# fread, fwrite, fprintf, ...  Since accessing NULL in embox without MMU
+# support could cause real damage to whole system in contrast with segfault of
+# application, we decided to keep explicit null checks and disable the warning.
+CFLAGS += -Wno-nonnull-compare
+ifeq ($(GCC_VERSION_MAJOR),7)
+common_ccflags += -Wno-error=format-truncation=
+common_ccflags += -Wno-error=alloc-size-larger-than=
+endif
+ifeq ($(ARCH),x86)
+ifeq ($(shell expr $(GCC_VERSION_MAJOR) \>= 8), 1)
+# This fixes gdb corrupt stack when debugging with QEMU.
+# This options is added here to suppress addbr32 instr generation,
+# which is incorrectly interpreted by QEMU.
+common_ccflags += -fcf-protection=none
+endif
+# There are some troubles on x86 with optimizations (O1 and more)
+# without this flag*/
+common_ccflags += -fno-omit-frame-pointer
+endif
+ifeq ($(ARCH),aarch64)
+ifeq ($(shell expr $(GCC_VERSION_MAJOR) \>= 10), 1)
+# GCC 10+ on aarch64-linux-gnu includes lse-init.o in libgcc which calls
+# __getauxval() - a glibc symbol not present in Embox. Disable runtime
+# LSE atomics CPU detection to avoid this undefined reference.
+common_ccflags += -mno-outline-atomics
+endif
+endif
+endif
 
-# Compiler flags
-cflags := $(CFLAGS)
-override CFLAGS  = $(COMMON_CCFLAGS)
-override CFLAGS += -std=gnu99
-#override CFLAGS += -fexceptions
-override CFLAGS += $(cflags)
+ifeq ($(COMPILER),clang)
+common_ccflags += -Wno-gnu
+common_ccflags += -fshort-enums
+common_ccflags += -Wno-address-of-packed-member
+# -meabi gnu is ARM32. Clang aarch64 rejects it.
+ifneq ($(ARCH),aarch64)
+common_ccflags += -meabi gnu
+endif
+ifeq ($(shell expr $(CLANG_VERSION_MAJOR) \>= 16), 1)
+common_ccflags += -Wno-missing-multilib
+endif
+endif
 
+#
+# C compiler flags
+#
+cflags := -std=gnu99 $(common_ccflags) $(CFLAGS)
+CFLAGS := $(cflags)
+
+#
+# C++ compiler flags
+#
+cxxflags := $(common_ccflags) $(CXXFLAGS)
+CXXFLAGS := $(cxxflags)
+
+#
 # Linker flags
-ldflags := $(LDFLAGS)
-override LDFLAGS  = -static -nostdlib
-override LDFLAGS += $(ldflags)
+#
+ldflags := -static -nostdlib -znoexecstack $(LDFLAGS)
+LDFLAGS := $(ldflags)
 
-override ARFLAGS = rcs
+#
+# Archiver flags
+#
+ARFLAGS = rcs
 
+#
+# Export variables for use in scripts
+#
+export EMBOX_CROSS_COMPILE := $(CROSS_COMPILE)
 
-CCFLAGS ?=
+export EMBOX_CC
+export EMBOX_CXX
 
-INCLUDES_FROM_FLAGS := \
-	$(patsubst -I%,%,$(filter -I%,$(CPPFLAGS) $(CXXFLAGS)))
+export EMBOX_GCC
+export EMBOX_GXX
 
+export EMBOX_CLANG
+export EMBOX_CLANGXX
+
+endif # __flags_mk

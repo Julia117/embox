@@ -12,47 +12,75 @@ abstract module cpu {
 }
 
 @Mandatory
-@DefaultImpl(embox.arch.generic.interrupt_stub)
-abstract module interrupt { }
-
-abstract module clock { }
-abstract module libarch { }
-abstract module locore { }
-abstract module arch { }
-abstract module entry { }
-abstract module boot { }
-abstract module lds { }
-
-module no_libarch extends libarch { }
-module no_clock extends clock { }
-
-@Mandatory
-@DefaultImpl(embox.arch.generic.nocontext)
-abstract module context { }
-
-@Mandatory
 @DefaultImpl(embox.arch.generic.nommu)
-abstract module mmu { }
+abstract module mmu {
+	option number page_size
+}
+
+@Mandatory
+@DefaultImpl(embox.arch.generic.interrupt_stub)
+abstract module interrupt {
+}
+
+@Mandatory
+@DefaultImpl(embox.arch.generic.context_stub)
+abstract module context {
+}
 
 @Mandatory
 @DefaultImpl(embox.arch.generic.syscall_stub)
-abstract module syscall { }
-
-abstract module syscall_caller { }
+abstract module syscall {
+}
 
 @Mandatory
 @DefaultImpl(embox.arch.generic.nousermode)
-abstract module usermode { }
-
-abstract module stackframe { }
-
-abstract module testtrap { }
+abstract module usermode {
+}
 
 @Mandatory
 @DefaultImpl(embox.arch.generic.nosmp)
-abstract module smp { }
+abstract module smp {
+}
 
-abstract module cpu_info { }
+@Mandatory
+@DefaultImpl(embox.arch.generic.reg_stub)
+abstract module reg {
+}
 
-abstract module vfork_entry { }
-abstract module fork_entry { }
+@Mandatory
+@DefaultImpl(embox.arch.generic.cpu_idle_stub)
+abstract module cpu_idle {
+}
+
+@DefaultImpl(embox.arch.generic.cache_stub)
+abstract module cache {
+}
+
+@DefaultImpl(embox.arch.generic.no_libarch)
+abstract module libarch {
+}
+
+@DefaultImpl(embox.arch.generic.mem_barriers_stub)
+abstract module mem_barriers {
+}
+
+abstract module mmuinfo {
+}
+
+abstract module syscall_caller {
+}
+
+abstract module stackframe {
+}
+
+abstract module testtrap {
+}
+
+abstract module cpu_info {
+}
+
+abstract module vfork_entry {
+}
+
+abstract module fork_entry {
+}

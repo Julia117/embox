@@ -1,0 +1,30 @@
+package embox.cxx
+
+static module libcxx_standalone extends embox.cxx.LibCxx {
+	@IncludeExport
+	source "new", "exception", "typeinfo"
+
+	@IncludeExport
+	source "cassert",
+		"cctype",
+		"cerrno",
+		"cfloat",
+		"climits",
+		"clocale",
+		"cmath",
+		"csetjmp",
+		"cstdarg",
+		"cstddef",
+		"cstdint",
+		"cstdio",
+		"cstdlib",
+		"cstring",
+		"ctime",
+		"cwchar",
+		"cwctype"
+
+	source "new.cpp"
+	source "purevirt_routines.cpp"
+
+	@NoRuntime depends embox.compat.libc.all
+}

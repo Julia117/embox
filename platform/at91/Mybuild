@@ -1,8 +1,12 @@
 
 package platform.at91
 
-module arch extends embox.arch.arch {
-	source "arch.c"
+module platform_init extends platform.platform_init {
+	source "platform_init.c"
+
+	option number sys_clk_div
+	option number sys_clk_mul
+
 	depends embox.driver.watchdog.at91_wdtc
 	depends embox.arch.arm.at91sam7.headers
 }

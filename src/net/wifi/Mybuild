@@ -1,0 +1,11 @@
+package embox.net.wifi
+
+module cfg80211 {
+	option number cfg80211_dev_max = 1
+	option number cfg80211_bss_max = 32
+
+	@IncludeExport(path="net")
+	source "cfg80211.h"
+
+	source "cfg80211.c"
+}

@@ -1,0 +1,9 @@
+package embox.cmd.hw.can_utils
+
+@AutoCmd
+@Cmd(name="cansend",help="send CAN-frames")
+module cansend {
+	source "cansend.c"
+
+	@NoRuntime depends embox.device.can_dev
+}

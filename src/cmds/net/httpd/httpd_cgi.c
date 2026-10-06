@@ -16,7 +16,14 @@
 #include <unistd.h>
 #include <errno.h>
 
-#include "httpd.h"
+#include <net/util/httpd.h>
+#ifdef __EMBUILD_MOD__
+#	include <framework/mod/options.h>
+# define CGI_PREFIX  OPTION_STRING_GET(cgi_prefix)
+#	define USE_REAL_CMD     OPTION_GET(BOOLEAN,use_real_cmd)
+#	define USE_PARALLEL_CGI OPTION_GET(BOOLEAN,use_parallel_cgi)
+#endif /* __EMBUILD_MOD__ */
+
 
 static char httpd_g_envbuf[256];
 
@@ -32,11 +39,39 @@ static const struct cgi_env_descr cgi_env[] = {
 	{ .name = "QUERY_STRING", .hreq_offset = offsetof(struct http_req, uri) + offsetof(struct http_req_uri, query) },
 };
 
+static int httpd_wait_cgi_child(pid_t target, int opts) {
+	pid_t child;
+
+	do {
+		child = waitpid(target, NULL, opts);
+	} while (child == -1 && errno == EINTR);
+
+	if (child == -1) {
+		int err = errno;
+		httpd_error("waitpid() : %s", strerror(err));
+		return -err;
+	}
+
+	return child;
+}
+
+static void httpd_on_cgi_child(const struct client_info *cinfo, pid_t child) {
+	if (child > 0) {
+		if (!USE_PARALLEL_CGI) {
+			httpd_wait_cgi_child(child, 0);
+		}
+	} else {
+		httpd_header(cinfo, 500, strerror(-child));
+	}
+}
+
 /* TODO replace with execve */
 static int httpd_execve(const char *path, char *const argv[], char *const envp[]) {
 	for (int i_ce = 0; envp[i_ce]; i_ce++) {
-		if (putenv(envp[i_ce])) {
-			HTTPD_ERROR("putenv failed\n");
+		int res;
+		res = putenv(envp[i_ce]);
+		if (res) {
+			httpd_error("putenv(%s) failed with %d", envp[i_ce], res);
 			exit(1);
 		}
 	}
@@ -66,7 +101,7 @@ static int httpd_fill_env(const struct http_req *hreq, char *envp[], int envp_le
 
 		printed = snprintf(ebp, env_sz, "%s=%s", ce_d->name, val);
 		if (env_sz <= printed) {
-			HTTPD_ERROR("have no space to write environment\n");
+			httpd_error("have no space to write environment");
 			exit(1);
 		}
 		envp[n_ce++] = ebp;
@@ -80,14 +115,14 @@ static int httpd_fill_env(const struct http_req *hreq, char *envp[], int envp_le
 	return n_ce;
 }
 
-static pid_t httpd_response_cgi(const struct client_info *cinfo, const struct http_req *hreq, 
+static pid_t httpd_response_cgi(const struct client_info *cinfo, const struct http_req *hreq,
 		char *path) {
 	pid_t pid;
 
 	pid = vfork();
 	if (pid < 0) {
 		int err = errno;
-		HTTPD_ERROR("vfork() error(%d): %s\n", err, strerror(err));
+		httpd_error("vfork() error(%d): %s", err, strerror(err));
 		return -err;
 	}
 
@@ -105,6 +140,7 @@ static pid_t httpd_response_cgi(const struct client_info *cinfo, const struct ht
 		exit(1);
 	}
 
+	httpd_on_cgi_child(cinfo, pid);
 	return pid;
 }
 
@@ -112,10 +148,12 @@ static int httpd_check_cgi(const struct http_req *hreq) {
 	return 0 == strncmp(hreq->uri.target, CGI_PREFIX, strlen(CGI_PREFIX));
 }
 
-pid_t httpd_try_respond_script(const struct client_info *cinfo, const struct http_req *hreq) {
+
+pid_t httpd_try_process(const struct client_info *cinfo, const struct http_req *hreq) {
 	char path[HTTPD_MAX_PATH];
 	struct stat fstat;
 	int path_len;
+	char *cmdname;
 
 	if (!httpd_check_cgi(hreq)) {
 		return 0;
@@ -126,20 +164,13 @@ pid_t httpd_try_respond_script(const struct client_info *cinfo, const struct htt
 		return -ENOMEM;
 	}
 
-	if (0 != stat(path, &fstat)) {
+	if (0 == stat(path, &fstat)) {
+		// file found in CGI_BIN folder
+		return httpd_response_cgi(cinfo, hreq, path);
+	}else if (USE_REAL_CMD){
+		cmdname = hreq->uri.target + strlen(CGI_PREFIX);
+		return httpd_response_cgi(cinfo, hreq, cmdname);
+	}else{
 		return 0;
 	}
-
-	return httpd_response_cgi(cinfo, hreq, path);
-}
-
-pid_t httpd_try_respond_cmd(const struct client_info *cinfo, const struct http_req *hreq) {
-	char *cmdname;
-
-	if (!httpd_check_cgi(hreq)) {
-		return 0;
-	}
-
-	cmdname = hreq->uri.target + strlen(CGI_PREFIX);
-	return httpd_response_cgi(cinfo, hreq, cmdname);
 }

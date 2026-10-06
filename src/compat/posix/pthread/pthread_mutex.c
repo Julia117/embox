@@ -28,6 +28,11 @@ int pthread_mutex_lock(pthread_mutex_t *mutex) {
 	return mutex_lock(mutex);
 }
 
+int pthread_mutex_timedlock(pthread_mutex_t *mutex,
+				const struct timespec *abstime) {
+	return mutex_timedlock(mutex, abstime);
+}
+
 /*
 int pthread_mutex_setprioceiling(pthread_mutex_t *mutex, int prioceiling, int *old_ceiling) {
 	return -ENOSYS;
@@ -51,10 +56,6 @@ int pthread_mutexattr_getprioceiling(const pthread_mutexattr_t *attr, int *prioc
 	return -ENOSYS;
 }
 
-int pthread_mutexattr_getprotocol(const pthread_mutexattr_t *attr, int *protocol) {
-	return -ENOSYS;
-}
-
 int pthread_mutexattr_getpshared(const pthread_mutexattr_t *attr, int *pshared) {
 	return -ENOSYS;
 }
@@ -70,10 +71,6 @@ int pthread_mutexattr_init(pthread_mutexattr_t *attr) {
 
 /*
 int pthread_mutexattr_setprioceiling(pthread_mutexattr_t *attr, int prioceiling) {
-	return -ENOSYS;
-}
-
-int pthread_mutexattr_setprotocol(pthread_mutexattr_t *attr, int protocol) {
 	return -ENOSYS;
 }
 

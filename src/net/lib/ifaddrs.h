@@ -11,6 +11,7 @@
 
 #include <sys/cdefs.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
 
 __BEGIN_DECLS
 

@@ -4,64 +4,73 @@
  *
  * @date 27.03.2012
  * @author Andrey Gazukin
+ * @author Denis Deryugin <deryugin.denis@gmail.com>
  */
 
+#include <ctype.h>
 #include <errno.h>
-#include <string.h>
+#include <libgen.h>
 #include <limits.h>
 #include <stdio.h>
-#include <ctype.h>
+#include <string.h>
 
-#include <util/err.h>
+#include <drivers/block_dev.h>
+#include <drivers/block_dev/ramdisk/ramdisk.h>
 #include <embox/unit.h>
-#include <fs/vfs.h>
-
-#include <mem/page.h>
 #include <mem/misc/pool.h>
+#include <mem/page.h>
 #include <mem/phymem.h>
-
-#include <util/indexator.h>
 #include <util/binalign.h>
+#include <util/err.h>
+#include <lib/libds/indexator.h>
 
-#include <embox/block_dev.h>
+#define MAX_RAMDISK_QUANTITY OPTION_GET(NUMBER, ramdisk_quantity)
+#define RAMDISK_SIZE         OPTION_GET(NUMBER, size)
+#define RAMDISK_BLOCK_SIZE   OPTION_GET(NUMBER, block_size)
 
-#include <drivers/ramdisk.h>
+POOL_DEF(ramdisk_pool, struct ramdisk, MAX_RAMDISK_QUANTITY);
+INDEX_DEF(ramdisk_idx, 0, MAX_RAMDISK_QUANTITY);
 
-#define MAX_DEV_QUANTITY OPTION_GET(NUMBER,ramdisk_quantity)
-#define RAMDISK_BLOCK_SIZE OPTION_GET(NUMBER,block_size)
+int ramdisk_read_sectors(struct block_dev *bdev, char *buffer, size_t count,
+    blkno_t blkno) {
+	struct ramdisk *ramdisk;
+	char *read_addr;
 
-POOL_DEF(ramdisk_pool,struct ramdisk,MAX_DEV_QUANTITY);
-INDEX_DEF(ramdisk_idx,0,MAX_DEV_QUANTITY);
+	ramdisk = block_dev_priv(bdev);
+	read_addr = ramdisk->p_start_addr + (blkno * bdev->block_size);
 
-static int ram_init(void *arg);
-static int read_sectors(struct block_dev *bdev, char *buffer, size_t count, blkno_t blkno);
-static int write_sectors(struct block_dev *bdev, char *buffer, size_t count, blkno_t blkno);
-static int ram_ioctl(struct block_dev *bdev, int cmd, void *args, size_t size);
-
-block_dev_driver_t ramdisk_pio_driver = {
-  "ramdisk_drv",
-  ram_ioctl,
-  read_sectors,
-  write_sectors
-};
-
-static int ramdisk_get_index(char *path) {
-	char *dev_name;
-	int idx;
-
-	if(NULL == (dev_name = strstr(path, "ram"))) {
-		return -1;
-	}
-	dev_name += sizeof("ram");
-
-	if(!isdigit((int)dev_name[0])) {
-		return -1;
-	}
-
-	sscanf(dev_name, "%d", &idx);
-
-	return idx;
+	memcpy(buffer, read_addr, count);
+	return count;
 }
+
+int ramdisk_write_sectors(struct block_dev *bdev, char *buffer, size_t count,
+    blkno_t blkno) {
+	struct ramdisk *ramdisk;
+	char *write_addr;
+
+	ramdisk = block_dev_priv(bdev);
+	write_addr = ramdisk->p_start_addr + (blkno * bdev->block_size);
+
+	memcpy(write_addr, buffer, count);
+	return count;
+}
+
+int rmadisk_ioctl(struct block_dev *bdev, int cmd, void *args, size_t size) {
+	switch (cmd) {
+	case IOCTL_GETDEVSIZE:
+		return bdev->size / bdev->block_size;
+
+	case IOCTL_GETBLKSIZE:
+		return bdev->block_size;
+	}
+	return -ENOSYS;
+}
+
+static const struct block_dev_ops ramdisk_pio_driver = {
+    .bdo_ioctl = rmadisk_ioctl,
+    .bdo_read = ramdisk_read_sectors,
+    .bdo_write = ramdisk_write_sectors,
+};
 
 /* XXX not stores index if path have no index placeholder, like * or # */
 struct ramdisk *ramdisk_create(char *path, size_t size) {
@@ -69,16 +78,13 @@ struct ramdisk *ramdisk_create(char *path, size_t size) {
 	int idx;
 	int err;
 
-	const size_t ramdisk_size = binalign_bound(size, RAMDISK_BLOCK_SIZE);
+	const size_t ramdisk_size = binalign_bound(size, RAMDISK_SIZE);
 	const size_t page_n = (ramdisk_size + PAGE_SIZE() - 1) / PAGE_SIZE();
 
 	if (NULL == (ramdisk = pool_alloc(&ramdisk_pool))) {
 		err = ENOMEM;
 		goto err_out;
 	}
-
-	ramdisk->blocks = ramdisk_size / RAMDISK_BLOCK_SIZE;
-	ramdisk->block_size = RAMDISK_BLOCK_SIZE;
 
 	ramdisk->p_start_addr = phymem_alloc(page_n);
 	if (NULL == (ramdisk->p_start_addr)) {
@@ -98,7 +104,7 @@ struct ramdisk *ramdisk_create(char *path, size_t size) {
 	}
 
 	ramdisk->bdev->size = ramdisk_size;
-
+	ramdisk->bdev->block_size = RAMDISK_BLOCK_SIZE;
 	return ramdisk;
 
 err_free_bdev_idx:
@@ -108,102 +114,33 @@ err_free_mem:
 err_free_ramdisk:
 	pool_free(&ramdisk_pool, ramdisk);
 err_out:
-	return err_ptr(err);
-
+	return err2ptr(err);
 }
 
-ramdisk_t *ramdisk_get_param(char *path) {
-	struct path ramdisk_node;
-	struct nas *nas;
-	struct node_fi *node_fi;
-
-	if (vfs_lookup(path, &ramdisk_node)) {
-		return NULL;
-	}
-
-	if (NULL == ramdisk_node.node) {
-		return NULL;
-	}
-	nas = ramdisk_node.node->nas;
-	node_fi = nas->fi;
-	return (ramdisk_t *) block_dev(node_fi->privdata)->privdata;
-}
-
+/* TODO rewrite it to be device remove function */
 int ramdisk_delete(const char *name) {
-	struct path ramdisk_node;
-	ramdisk_t *ramdisk;
-	struct nas *nas;
-	struct node_fi *node_fi;
-	int idx;
+	struct ramdisk *ram;
+	struct block_dev *bdev;
 
-	if (vfs_lookup(name, &ramdisk_node)) {
-		return -1;
+	assert(name);
+
+	bdev = block_dev_find(basename((char *)name));
+
+	if (!bdev) {
+		return -ENOENT;
 	}
 
-	if (NULL == ramdisk_node.node) {
-		return -1;
+	ram = block_dev_priv(bdev);
+
+	if (!pool_belong(&ramdisk_pool, ram)) {
+		return -EINVAL;
 	}
 
-	nas = ramdisk_node.node->nas;
-	node_fi = nas->fi;
-	if (NULL != (ramdisk = (ramdisk_t *) block_dev(node_fi->privdata)->privdata)) {
-		if (-1 != (idx = ramdisk_get_index((char *)name))) {
-			index_free(&ramdisk_idx, idx);
-		}
-		pool_free(&ramdisk_pool, ramdisk);
-		block_dev_destroy (node_fi->privdata);
-		vfs_del_leaf(ramdisk_node.node);
-	}
+	phymem_free(ram->p_start_addr, bdev->size / PAGE_SIZE());
+	index_free(&ramdisk_idx, ram->idx);
+	pool_free(&ramdisk_pool, ram);
+
+	block_dev_free(bdev);
+
 	return 0;
 }
-
-
-static int ram_init(void *arg) {
-	return 0;
-}
-
-static int read_sectors(block_dev_t *bdev,
-		char *buffer, size_t count, blkno_t blkno) {
-	ramdisk_t *ramdisk;
-	char *read_addr;
-
-	ramdisk = (ramdisk_t *) bdev->privdata;
-	read_addr = ramdisk->p_start_addr + (blkno * ramdisk->block_size);
-
-	memcpy(buffer, read_addr, count);
-	return count;
-}
-
-
-static int write_sectors(block_dev_t *bdev,
-		char *buffer, size_t count, blkno_t blkno) {
-	ramdisk_t *ramdisk;
-	char *write_addr;
-
-	ramdisk = (ramdisk_t *) bdev->privdata;
-	write_addr = ramdisk->p_start_addr + (blkno * ramdisk->block_size);
-
-	memcpy(write_addr, buffer, count);
-	return count;
-}
-
-static int ram_ioctl(block_dev_t *bdev, int cmd, void *args, size_t size) {
-	ramdisk_t *ramd = (ramdisk_t *) bdev->privdata;
-
-	switch (cmd) {
-	case IOCTL_GETDEVSIZE:
-		return ramd->blocks;
-
-	case IOCTL_GETBLKSIZE:
-		return ramd->block_size;
-	}
-	return -ENOSYS;
-}
-
-/*
-static int flush(void *bdev) {
-	return 0;
-}
-*/
-
-EMBOX_BLOCK_DEV("ramdisk", &ramdisk_pio_driver, ram_init);

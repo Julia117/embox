@@ -14,6 +14,7 @@
 #include <drivers/video/vga.h>
 #include <drivers/console/vc/vc_vga.h>
 #include <util/member.h>
+#include <mem/vmem_device_memory.h>
 
 /* The video memory address. */
 #define VIDEO          0xB8000
@@ -110,7 +111,8 @@ static int vc_diag_init(const struct diag *diag) {
 	size_t len = 0x1000;
 
 	/* Map in the physical memory; 0xb8000 is text mode VGA video memory */
-	ptr = mmap_device_memory((void* ) 0xb8000, len, PROT_READ|PROT_WRITE|PROT_NOCACHE, MAP_FIXED, 0xb8000 );
+	ptr = mmap_device_memory((void *)0xb8000, len,
+	    PROT_READ | PROT_WRITE | PROT_NOCACHE, MAP_FIXED, (uintptr_t)0xb8000);
 	if ( ptr == MAP_FAILED ) {
 		return -1;
 	}
@@ -122,10 +124,11 @@ static void vc_diag_putc(const struct diag *diag, char ch) {
 	vterm_video_putc(&vc_vga_video.video, ch);
 }
 
-const struct diag_ops vc_video_diag_ops = {
+static const struct diag_ops vc_video_diag_ops = {
 	.init = vc_diag_init,
 	.putc = vc_diag_putc,
 };
+
 const struct vc_video_diag DIAG_IMPL_NAME(__EMBUILD_MOD__) = {
 	.diag = {
 		.ops = &vc_video_diag_ops,

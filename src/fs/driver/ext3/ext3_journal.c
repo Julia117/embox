@@ -7,12 +7,14 @@
  */
 
 #include <errno.h>
-#include <mem/objalloc.h>
+#include <string.h>
 #include <arpa/inet.h>
-#include <fs/vfs.h>
+
+#include <mem/objalloc.h>
+
 #include <fs/ext2.h>
 #include "ext3_journal.h"
-#include <string.h>
+
 
 static int journal_write_desc_blocks(journal_t *jp);
 static int journal_write_commit_block(journal_t *jp);
@@ -74,7 +76,7 @@ uint32_t ext3_journal_bmap(journal_t *jp, block_t block) {
 		return spec->ext3_journal_inode->i_block[block];
 	}
 
-	jp->j_dev->driver->read(jp->j_dev, (char *)buf, jp->j_blocksize,
+	jp->j_dev->driver->bdo_read(jp->j_dev, (char *)buf, jp->j_blocksize,
 			2 * spec->ext3_journal_inode->i_block[NDADDR]);
 
 	return buf[block - NDADDR];

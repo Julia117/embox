@@ -1,0 +1,23 @@
+/**
+ * @file
+ * @brief
+ *
+ * @author Aleksey Zhmulin
+ * @date 29.05.25
+ */
+
+#include <drivers/common/memory.h>
+
+#include <drivers/i2c/i2c_priv.h>
+#include "sc64_i2c.h"
+
+#define BASE_ADDR  OPTION_GET(NUMBER, base_addr)
+#define I2C_BUS_ID 0
+
+static const struct i2c_bus sc64_i2c0_bus = {
+    .i2cb_priv = (void *)BASE_ADDR,
+    .i2cb_ops = &sc64_i2c_ops,
+    .i2cb_id = I2C_BUS_ID,
+};
+
+I2C_BUS_REGISTER(&sc64_i2c0_bus);

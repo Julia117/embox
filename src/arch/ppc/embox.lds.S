@@ -6,8 +6,7 @@ OUTPUT_ARCH(powerpc)
 ENTRY(_start)
 
 MEMORY {
-	MEMORY_REGION(RAM)
-	MEMORY_REGION(ROM)
+	#include <regions.lds.h>
 }
 
 _ram_base = ORIGIN(RAM);
@@ -15,8 +14,8 @@ _ram_size = LENGTH(RAM);
 
 SECTIONS {
 	.text : {
-		*(.trap_table.text)
+		KEEP(*(.trap_table.text));
 		*(.text)
 		*(.text.*)
-	}
+	} SECTION_REGION(text) :text
 }

@@ -16,27 +16,6 @@ module kernel_task {
 	depends embox.kernel.task.task_table_api
 }
 
-module multi extends api {
-	source "multi.c", "multi.h"
-
-	depends embox.kernel.task.kernel_task
-	depends embox.kernel.task.task_resource
-	depends embox.kernel.task.task_table
-
-	depends embox.compat.posix.proc.vfork
-
-	depends embox.kernel.thread.core
-	depends embox.kernel.sched.sched
-	/* uses task_self() to initialize
-	 * resources, which implies to thread be
-	 * already loaded, as task_self uses
-	 * thread_self to determine current thread
-	 */
-
-	@NoRuntime depends embox.compat.libc.assert
-	@NoRuntime depends embox.compat.libc.str
-}
-
 module single extends api {
 	source "single.c"
 	source "single.h"
@@ -58,7 +37,14 @@ module task_resource {
 	source "task_resource.c", "task_resource.lds.S"
 
 	@NoRuntime depends embox.compat.libc.assert
-	@NoRuntime depends embox.util.Array
+	@NoRuntime depends embox.lib.libds
+
+/* FIXME atexit contains option atexit_max which used in limits.h
+ * #include <config/embox/kernel/task/resource/atexit.h>
+ * #define ATEXIT_MAX \
+ *   OPTION_MODULE_GET(embox__kernel__task__resource__atexit, NUMBER, atexit_max)
+ */
+	@NoRuntime depends embox.kernel.task.resource.atexit
 }
 
 module task_table extends task_table_api {

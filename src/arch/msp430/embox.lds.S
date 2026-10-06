@@ -14,12 +14,12 @@ _ram_size = LENGTH(RAM);
 
 SECTIONS {
 	.vectors : {
-		*(.vectors)
+		KEEP(*(.vectors));
 	} > vectors
 
 	.text : {
 		*(.text)
 		*(.text.*)
 		*(.glue_7t) *(.glue_7)
-	}
+	} SECTION_REGION(text) :text
 }

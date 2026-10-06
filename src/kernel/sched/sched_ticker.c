@@ -9,61 +9,68 @@
 
 #include <hal/cpu.h>
 #include <kernel/sched.h>
-#include <kernel/thread.h>
-#include <kernel/sched/schedee.h>
 
-#include <kernel/time/timer.h>
+#include <kernel/time/sys_timer.h>
 #include <kernel/cpu/cpu.h>
 
 #include <kernel/panic.h>
 
 #include <framework/mod/options.h>
 
-#include <embox/unit.h>
-
-EMBOX_UNIT_INIT(sched_ticker_module_init);
-
 #define SCHED_TICK_INTERVAL \
 	OPTION_GET(NUMBER, tick_interval)
 
-static struct sys_timer *sched_tick_timer;
+static struct sys_timer sched_tick_timer;
+
+#ifdef SMP /* XXX */
+static struct sys_timer_sharing sched_tick_sharing;
+#endif
 
 static void sched_tick(sys_timer_t *timer, void *param) {
-	sched_post_switch();
-
 #ifdef SMP
 	for (int i = 0; i < NCPU; i++) {
 		extern void smp_send_resched(int cpu_id);
+		if(i == cpu_get_id()) {
+			continue;
+		}
 		smp_send_resched(i);
 	}
 #endif /* SMP */
+	sched_post_switch();
 }
 
-void sched_ticker_init(void) {
-	if (timer_set(&sched_tick_timer, TIMER_PERIODIC, SCHED_TICK_INTERVAL,
-			sched_tick, NULL)) {
-		panic("Scheduler initialization failed!\n");
+void sched_ticker_add(void) {
+	if (!sys_timer_is_started(&sched_tick_timer)) {
+		sys_timer_init_start_msec(&sched_tick_timer, SYS_TIMER_PERIODIC,
+				SCHED_TICK_INTERVAL, sched_tick, NULL);
 	}
 }
 
-void sched_ticker_fini(void) {
-	timer_close(sched_tick_timer);  // TODO err check?
-}
-
-void sched_ticker_switch(struct schedee *prev, struct schedee *next) {
-	if (prev->policy == SCHED_FIFO &&
-		next->policy != SCHED_FIFO) {
-		sched_ticker_init();
-	}
-
-	if (prev->policy != SCHED_FIFO &&
-		next->policy == SCHED_FIFO) {
-		sched_ticker_fini();
+void sched_ticker_del(void) {
+	if (sys_timer_is_started(&sched_tick_timer)) {
+		sys_timer_stop(&sched_tick_timer);
 	}
 }
 
-static int sched_ticker_module_init(void) {
-	sched_ticker_init();
-	return 0;
+#ifdef SMP /* XXX */
+void sched_ticker_set_shared(void) {
+	if (!sys_timer_is_shared(&sched_tick_timer)) {
+		sched_tick_timer.timer_sharing = &sched_tick_sharing;
+		if(sys_timer_is_started(&sched_tick_timer))
+			sched_tick_timer.timer_sharing->shared_cpu = (0x1 << cpu_get_id());
+		sys_timer_set_shared(&sched_tick_timer);
+	}else{
+		panic("Once-called function, check up\n");
+	}
 }
 
+void sched_ticker_set_private(void) {
+	if (sys_timer_is_shared(&sched_tick_timer)) {
+		sys_timer_set_private(&sched_tick_timer);
+	}
+}
+
+void* sched_ticker_get_timer(void){
+	return (void*)&sched_tick_timer;
+}
+#endif

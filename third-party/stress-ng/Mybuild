@@ -1,0 +1,14 @@
+package third_party.cmd
+
+@App
+@AutoCmd
+@Cmd(name="stress-ng", help="")
+@Build(stage=2,script="$(EXTERNAL_MAKE)")
+module stress_ng {
+	@AddPrefix("^BUILD/extbld/third_party/cmd/stress_ng/install")
+	source "stress-ng.o"
+
+	@NoRuntime depends embox.compat.libc.all
+	@NoRuntime depends embox.compat.posix.LibPosix
+	@NoRuntime depends embox.compat.posix.stubs
+}

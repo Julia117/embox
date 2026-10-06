@@ -1,0 +1,31 @@
+package embox.driver.mmc
+
+@BuildDepends(third_party.bsp.st_bsp_api)
+module stm32cube_sdio_1 {
+	option string log_level="LOG_ERR"
+	option number sdio_id = 1
+	option number use_dma = 0
+
+	source "stm32cube_sdio.c"
+	source "stm32cube_sdio_drv.c"
+
+	depends embox.driver.block_dev
+	depends embox.driver.mmc.mmc_core
+
+	@NoRuntime depends third_party.bsp.st_bsp_api
+}
+
+@BuildDepends(third_party.bsp.st_bsp_api)
+module stm32cube_sdio_2 {
+	option string log_level="LOG_ERR"
+	option number sdio_id = 2
+	option number use_dma = 0
+
+	source "stm32cube_sdio.c"
+	source "stm32cube_sdio_drv.c"
+
+	depends embox.driver.block_dev
+	depends embox.driver.mmc.mmc_core
+
+	@NoRuntime depends third_party.bsp.st_bsp_api
+}

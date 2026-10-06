@@ -1,0 +1,9 @@
+package project.website.cgi_bin
+
+@AutoCmd
+@Cmd(name="led_driver", help="Drives GPIO leds", man="")
+module led_driver {
+	source "led_driver.c"
+
+	@NoRuntime depends embox.lib.leddrv
+}

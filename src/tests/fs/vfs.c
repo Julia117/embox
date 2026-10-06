@@ -7,7 +7,7 @@
  */
 
 #include <fs/vfs.h>
-#include <fs/node.h>
+#include <fs/inode.h>
 
 #include <embox/test.h>
 
@@ -16,8 +16,8 @@ EMBOX_TEST_SUITE("Test for various vfs operations");
 TEST_SETUP_SUITE(setup_suite);
 TEST_TEARDOWN_SUITE(teardown_suite);
 
-static struct node *test_root;
-static struct node *a, *b, *c, *d, *e;
+static struct inode *test_root;
+static struct inode *a, *b, *c, *d, *e;
 
 /* Builds the tree under `test_root':
  *
@@ -30,16 +30,23 @@ static struct node *a, *b, *c, *d, *e;
  */
 static int setup_suite(void) {
 
-	test_root = node_alloc("R", 0);
-	a = node_alloc("A", 0);
-	b = node_alloc("B", 0);
-	c = node_alloc("C", 0);
-	d = node_alloc("D", 0);
-	e = node_alloc("E", 0);
+	test_root = inode_alloc(NULL);
+	a = inode_alloc(NULL);
+	b = inode_alloc(NULL);
+	c = inode_alloc(NULL);
+	d = inode_alloc(NULL);
+	e = inode_alloc(NULL);
 
 	if (!a || !b || !c || !d || !e) {
 		return -ENOMEM;
 	}
+
+	inode_name_set(test_node, "R");
+	inode_name_set(test_node, "A");
+	inode_name_set(test_node, "B");
+	inode_name_set(test_node, "C");
+	inode_name_set(test_node, "D");
+	inode_name_set(test_node, "E");
 
 	vfs_add_leaf(a, test_root);
 	vfs_add_leaf(b, test_root);
@@ -66,7 +73,7 @@ static int teardown_suite(void) {
 	return 0;
 }
 
-static struct node *vfs_lookup_nr(struct node *node, const char *str_path) {
+static struct inode *vfs_lookup_nr(struct inode *node, const char *str_path) {
 	static struct path nr_return;
 	int lookup_ecode;
 
@@ -75,15 +82,6 @@ static struct node *vfs_lookup_nr(struct node *node, const char *str_path) {
 		return NULL;
 	}
 	return nr_return.node;
-}
-
-TEST_CASE("Node parent should be same as created") {
-
-	test_assert_equal(test_root, node_parent(a));
-	test_assert_equal(test_root, node_parent(b));
-	test_assert_equal(b, node_parent(c));
-	test_assert_equal(b, node_parent(d));
-	test_assert_equal(d, node_parent(e));
 }
 
 TEST_CASE("vfs_lookup_nr should find all nodes") {

@@ -1,0 +1,11 @@
+package embox.driver.gpio
+
+module niiet_gpio {
+	option number gpio_chip_id = 0
+	option number altfunc_field_width = 2 /* 2 for VG015 & 4 for VG1t */
+
+	source "niiet_gpio.c"
+
+	depends embox.driver.gpio.core
+}
+

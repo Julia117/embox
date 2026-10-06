@@ -12,17 +12,12 @@
 
 #include <util/math.h>
 
-#include <embox/net/family.h>
-#include <embox/net/pack.h>
-#include <embox/net/sock.h>
-
-
 #include <kernel/time/time.h>
 #include <kernel/sched.h>
 
 #include <hal/ipl.h>
 #include <kernel/sched/sched_lock.h>
-#include <fs/idesc_event.h>
+#include <kernel/task/resource/idesc_event.h>
 #include <mem/misc/pool.h>
 #include <net/sock.h>
 #include <net/skbuff.h>
@@ -67,7 +62,7 @@ int sock_close(struct sock *sk) {
 	return sk->f_ops->close(sk);
 }
 
-static unsigned long sock_calc_timeout(struct sock *sk) {
+unsigned long sock_calc_timeout(struct sock *sk) {
 	unsigned long timeout = timeval_to_ms(&sk->opt.so_rcvtimeo);
 	if (timeout == 0) {
 		timeout = SCHED_TIMEOUT_INFINITE;
@@ -75,7 +70,7 @@ static unsigned long sock_calc_timeout(struct sock *sk) {
 	return timeout;
 }
 
-static struct sk_buff *sock_get_skb(struct sock *sk, unsigned long timeout, int *err_p) {
+struct sk_buff *sock_get_skb(struct sock *sk, unsigned long timeout, int *err_p) {
 	struct sk_buff *skb;
 	int err;
 
@@ -106,18 +101,30 @@ static struct sk_buff *sock_get_skb(struct sock *sk, unsigned long timeout, int 
 }
 
 int sock_dgram_recvmsg(struct sock *sk, struct msghdr *msg, int flags) {
-	const unsigned long timeout = sock_calc_timeout(sk);
+	unsigned long timeout;
 	struct sk_buff *skb;
 	int err, nrecv;
 
 	assert(sk != NULL);
 
+	timeout = sock_calc_timeout(sk);
+
+	if (msg->msg_flags & MSG_DONTWAIT) {
+		timeout = 0;
+	}
+
 	skb = sock_get_skb(sk, timeout, &err);
+
+	// FIXME: assert(err)?
+	if (!skb && msg->msg_flags & MSG_DONTWAIT) {
+		return 0;
+	}
 
 	if (!skb) {
 		assert(err);
 		return err;
 	}
+	// FIXME
 
 	nrecv = skb_iovec_buf(msg->msg_iov, msg->msg_iovlen,
 			skb->p_data, skb->p_data_end - skb->p_data);
@@ -153,6 +160,10 @@ int sock_stream_recvmsg(struct sock *sk, struct msghdr *msg, int flags) {
 	err = 0;
 	while (bp < bufend) {
 		size_t len;
+
+		if (msg->msg_flags & MSG_DONTWAIT) {
+			timeout = 0;
+		}
 
 		skb = sock_get_skb(sk, timeout, &err);
 		if (!skb) {

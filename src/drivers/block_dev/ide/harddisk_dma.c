@@ -6,20 +6,23 @@
  * @author Andrey Gazukin
  */
 
-#include <asm/io.h>
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
-
-#include <drivers/ide.h>
-#include <embox/block_dev.h>
-#include <mem/phymem.h>
-#include <util/indexator.h>
 #include <limits.h>
 
-extern int hd_ioctl(block_dev_t *bdev, int cmd, void *args, size_t size);
+#include <asm/io.h>
 
-static void setup_dma(hdc_t *hdc, char *buffer, int count, int cmd) {
+#include <drivers/ide.h>
+#include <drivers/block_dev.h>
+#include <drivers/block_dev/partition.h>
+#include <mem/phymem.h>
+
+
+extern int hd_ioctl(struct block_dev *bdev, int cmd, void *args, size_t size);
+static const struct block_dev_ops idedisk_udma_driver;
+
+static void setup_dma(struct hdc *hdc, char *buffer, int count, int cmd) {
 	int i;
 	int len;
 	char *next;
@@ -52,13 +55,13 @@ static void setup_dma(hdc_t *hdc, char *buffer, int count, int cmd) {
 		 hdc->bmregbase + BM_STATUS_REG);
 }
 
-static void start_dma(hdc_t *hdc) {
+static void start_dma(struct hdc *hdc) {
 	/* Start DMA operation */
 	outb(inb(hdc->bmregbase + BM_COMMAND_REG) | BM_CR_START,
 		 hdc->bmregbase + BM_COMMAND_REG);
 }
 
-static int stop_dma(hdc_t *hdc) {
+static int stop_dma(struct hdc *hdc) {
 	int dmastat;
 
 	/* Stop DMA channel and check DMA status */
@@ -79,9 +82,9 @@ static int stop_dma(hdc_t *hdc) {
 	return 0;
 }
 
-static int hd_read_udma(block_dev_t *bdev, char *buffer, size_t count, blkno_t blkno) {
-	hd_t *hd;
-	hdc_t *hdc;
+static int hd_read_udma(struct block_dev *bdev, char *buffer, size_t count, blkno_t blkno) {
+	struct hd *hd;
+	struct hdc *hdc;
 	int sectsleft;
 	int nsects;
 	int result = 0;
@@ -92,9 +95,9 @@ static int hd_read_udma(block_dev_t *bdev, char *buffer, size_t count, blkno_t b
 	}
 	bufp = (char *) buffer;
 
-	hd = (hd_t *) bdev->privdata;
+	hd = block_dev_priv(bdev);
 	hdc = hd->hdc;
-	sectsleft = count / SECTOR_SIZE;
+	sectsleft = count / bdev->block_size;
 
 
 	while (sectsleft > 0) {
@@ -115,8 +118,8 @@ static int hd_read_udma(block_dev_t *bdev, char *buffer, size_t count, blkno_t b
 			nsects = sectsleft;
 		}
 
-		if (nsects > MAX_DMA_XFER_SIZE / SECTOR_SIZE) {
-			nsects = MAX_DMA_XFER_SIZE / SECTOR_SIZE;
+		if (nsects > MAX_DMA_XFER_SIZE / bdev->block_size) {
+			nsects = MAX_DMA_XFER_SIZE / bdev->block_size;
 		}
 
 		/* Prepare transfer */
@@ -127,7 +130,7 @@ static int hd_read_udma(block_dev_t *bdev, char *buffer, size_t count, blkno_t b
 		hd_setup_transfer(hd, blkno, nsects);
 
 		/* Setup DMA */
-		setup_dma(hdc, bufp, nsects * SECTOR_SIZE, BM_CR_WRITE);
+		setup_dma(hdc, bufp, nsects * bdev->block_size, BM_CR_WRITE);
 
 		/* Start read */
 		outb(HDCMD_READDMA, hdc->iobase + HDC_COMMAND);
@@ -147,7 +150,7 @@ static int hd_read_udma(block_dev_t *bdev, char *buffer, size_t count, blkno_t b
 
 		/* Advance to next */
 		sectsleft -= nsects;
-		bufp += nsects * SECTOR_SIZE;
+		bufp += nsects * bdev->block_size;
 	}
 
 	/* Cleanup */
@@ -157,9 +160,9 @@ static int hd_read_udma(block_dev_t *bdev, char *buffer, size_t count, blkno_t b
 	return result == 0 ? count : result;
 }
 
-static int hd_write_udma(block_dev_t *bdev, char *buffer, size_t count, blkno_t blkno) {
-	hd_t *hd;
-	hdc_t *hdc;
+static int hd_write_udma(struct block_dev *bdev, char *buffer, size_t count, blkno_t blkno) {
+	struct hd *hd;
+	struct hdc *hdc;
 	int sectsleft;
 	int nsects;
 	int result = 0;
@@ -170,9 +173,9 @@ static int hd_write_udma(block_dev_t *bdev, char *buffer, size_t count, blkno_t 
 	}
 	bufp = (char *) buffer;
 
-	hd = (hd_t *) bdev->privdata;
+	hd = block_dev_priv(bdev);
 	hdc = hd->hdc;
-	sectsleft = count / SECTOR_SIZE;
+	sectsleft = count / bdev->block_size;
 
 	while (sectsleft > 0) {
 		/* Select drive */
@@ -191,8 +194,8 @@ static int hd_write_udma(block_dev_t *bdev, char *buffer, size_t count, blkno_t 
 		} else {
 			nsects = sectsleft;
 		}
-		if (nsects > MAX_DMA_XFER_SIZE / SECTOR_SIZE) {
-			nsects = MAX_DMA_XFER_SIZE / SECTOR_SIZE;
+		if (nsects > MAX_DMA_XFER_SIZE / bdev->block_size) {
+			nsects = MAX_DMA_XFER_SIZE / bdev->block_size;
 		}
 
 		/* Prepare transfer */
@@ -203,7 +206,7 @@ static int hd_write_udma(block_dev_t *bdev, char *buffer, size_t count, blkno_t 
 		hd_setup_transfer(hd, blkno, nsects);
 
 		/* Setup DMA */
-		setup_dma(hdc, bufp, nsects * SECTOR_SIZE, BM_CR_READ);
+		setup_dma(hdc, bufp, nsects * bdev->block_size, BM_CR_READ);
 
 		/* Start write */
 		outb(HDCMD_WRITEDMA, hdc->iobase + HDC_COMMAND);
@@ -223,7 +226,7 @@ static int hd_write_udma(block_dev_t *bdev, char *buffer, size_t count, blkno_t 
 
 		/* Advance to next */
 		sectsleft -= nsects;
-		bufp += nsects * SECTOR_SIZE;
+		bufp += nsects * bdev->block_size;
 	}
 
 	/* Cleanup */
@@ -233,54 +236,40 @@ static int hd_write_udma(block_dev_t *bdev, char *buffer, size_t count, blkno_t 
 	return result == 0 ? count : result;
 }
 
-static block_dev_driver_t idedisk_udma_driver = {
-	"idedisk_udma_drv",
-	hd_ioctl,
-	hd_read_udma,
-	hd_write_udma
-};
-
-static int idedisk_udma_init (void *args) {
-//	struct ide_tab *ide;
-	hd_t *drive;
+static int idedisk_udma_init (struct block_dev *bdev, void *args) {
+	struct hd *drive;
 	double size;
 	char   path[PATH_MAX];
 
-#if 0
-	ide = ide_get_drive();
-
-	for(int i = 0; i < HD_DRIVES; i++) {
-		if (NULL == ide->drive[i]) {
-			continue;
-		} else {
-			drive = (hd_t *) ide->drive[i];
-#endif
-			drive = (hd_t *)args;
-			/* Make new device */
-			if ((drive->media == IDE_DISK) && (drive->udmamode != -1)) {
-				*path = 0;
-				strcat(path, "/dev/hd*");
-				if (0 > (drive->idx = block_dev_named(path, idedisk_idx))) {
-					return drive->idx;
-				}
-				drive->bdev = block_dev_create(path,
-						&idedisk_udma_driver, drive);
-				if (NULL != drive->bdev) {
-					size = (double) drive->param.cylinders *
-						   (double) drive->param.heads *
-						   (double) drive->param.unfbytes *
-						   (double) (drive->param.sectors + 1);
-					block_dev(drive->bdev)->size = (size_t) size;
-				} else {
-					return -1;
-				}
-				create_partitions(drive);
-//			} else {
-//				continue;
-//			}
+	drive = (struct hd *)args;
+	/* Make new device */
+	if (drive && (drive->media == IDE_DISK) && (drive->udmamode != -1)) {
+		*path = 0;
+		strcat(path, "/dev/hd*");
+		if (0 > (drive->idx = block_dev_named(path, idedisk_idx))) {
+			return drive->idx;
 		}
-//	}
+		drive->bdev = block_dev_create(path,
+				&idedisk_udma_driver, drive);
+		if (NULL != drive->bdev) {
+			size = (double) drive->param.cylinders *
+				   (double) drive->param.heads *
+				   (double) drive->param.unfbytes *
+				   (double) (drive->param.sectors + 1);
+			block_dev(drive->bdev)->size = (size_t) size;
+		} else {
+			return -1;
+		}
+		create_partitions(drive->bdev);
+	}
 	return 0;
 }
 
-EMBOX_BLOCK_DEV("idedisk_udma", &idedisk_udma_driver, idedisk_udma_init);
+static const struct block_dev_ops idedisk_udma_driver = {
+	.bdo_ioctl = hd_ioctl,
+	.bdo_read = hd_read_udma,
+	.bdo_write = hd_write_udma,
+	.bdo_probe = idedisk_udma_init,
+};
+
+BLOCK_DEV_DRIVER_DEF("idedisk_udma", &idedisk_udma_driver);

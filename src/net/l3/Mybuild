@@ -1,9 +1,10 @@
 package embox.net
 
 module arp {
+	option string log_level="LOG_NONE"
 	source "arp.c"
 
-	@NoRuntime depends embox.framework.net.pack
+	@NoRuntime depends embox.net.net_pack
 	@NoRuntime depends embox.compat.libc.assert
 	@NoRuntime depends embox.compat.libc.str
 	@NoRuntime depends embox.net.core
@@ -14,9 +15,10 @@ module arp {
 }
 
 module icmpv4 {
+	option string log_level="LOG_NONE"
 	source "icmpv4.c"
 
-	depends embox.framework.net.proto
+	depends proto
 	depends embox.compat.libc.assert
 	depends embox.net.lib.icmpv4
 	depends embox.net.lib.ipv4
@@ -24,9 +26,10 @@ module icmpv4 {
 }
 
 module icmpv6 {
+	option string log_level="LOG_NONE"
 	source "icmpv6.c"
 
-	depends embox.framework.net.proto
+	depends embox.net.proto
 	depends embox.compat.libc.assert
 	depends embox.compat.libc.str
 	depends embox.net.core
@@ -47,9 +50,10 @@ module ndp {
 }
 
 module rarp {
+	option string log_level="LOG_NONE"
 	source "rarp.c"
 
-	@NoRuntime depends embox.framework.net.pack
+	@NoRuntime depends embox.net.net_pack
 	@NoRuntime depends embox.compat.libc.assert
 	@NoRuntime depends embox.compat.libc.str
 	@NoRuntime depends embox.net.core
@@ -59,11 +63,30 @@ module rarp {
 	@NoRuntime depends embox.net.skbuff
 }
 
-module route {
-	source "route.c"
+@DefaultImpl(route_no_net_ns)
+abstract module route {
+}
+
+module route_no_net_ns extends route {
 	option number route_table_size=8
+	source "route.c"
 
 	depends core /* for inetdev.c */
 	depends embox.mem.pool
-	depends embox.util.DList
+	@NoRuntime depends embox.lib.libds
+}
+
+module route_net_ns extends route {
+	option number route_table_size=8
+	source "route_net_ns.c"
+
+	depends core /* for inetdev.c */
+	depends embox.mem.pool
+	@NoRuntime depends embox.lib.libds
+}
+
+module proto {
+	source "proto.c"
+
+	@NoRuntime depends embox.lib.libds
 }

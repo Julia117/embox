@@ -1,0 +1,12 @@
+package project.ism43362_eS_wifi.cmd
+
+@App
+@AutoCmd
+@Cmd(name = "eswifi_shell", help = "B-L475E-IOT01A WiFi module test (lib based)")
+
+module eswifi_shell {
+	
+	source "ism43362_test.c"
+
+	depends project.ism43362_eS_wifi.libs.ism43362
+}

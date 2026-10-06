@@ -14,10 +14,10 @@
 #include <errno.h>
 
 
-#include <util/hashtable.h>
-#include <util/dlist.h>
-#include <util/indexator.h>
-#include <util/array.h>
+#include <lib/libds/hashtable.h>
+#include <lib/libds/dlist.h>
+#include <lib/libds/indexator.h>
+#include <lib/libds/array.h>
 
 #include <mem/misc/pool.h>
 #include <mem/sysmalloc.h>
@@ -25,6 +25,7 @@
 #include <net/if.h>
 #include <net/netdevice.h>
 #include <net/skbuff.h>
+#include <net/netlink.h>
 
 #include <framework/mod/options.h>
 
@@ -59,15 +60,18 @@ static int netdev_init(struct net_device *dev, const char *name,
 	assert(setup != NULL);
 
 	dlist_head_init(&dev->rx_lnk);
+	dlist_head_init(&dev->tx_lnk);
 	strcpy(&dev->name[0], name);
 	memset(&dev->stats, 0, sizeof dev->stats);
 	skb_queue_init(&dev->dev_queue);
+	skb_queue_init(&dev->dev_queue_tx);
 
 	if (priv_size != 0) {
 		dev->priv = sysmalloc(priv_size);
 		if (dev->priv == NULL) {
 			return -ENOMEM;
 		}
+		memset(dev->priv, 0, priv_size);
 	}
 	else {
 		dev->priv = NULL;
@@ -75,6 +79,12 @@ static int netdev_init(struct net_device *dev, const char *name,
 
 	return (*setup)(dev);
 }
+
+#if defined(NET_NAMESPACE_ENABLED) && (NET_NAMESPACE_ENABLED == 1)
+void dev_net_set(struct net_device *dev, net_namespace_p net_ns) {
+	assign_net_ns(dev->net_ns, net_ns);
+}
+#endif
 
 struct net_device * netdev_alloc(const char *name,
 		int (*setup)(struct net_device *), size_t priv_size) {
@@ -93,6 +103,7 @@ struct net_device * netdev_alloc(const char *name,
 	if (dev == NULL) {
 		return NULL; /* error: no memory */
 	}
+	memset(dev, 0, sizeof(struct net_device));
 
 	dev->index = index_alloc(&netdev_index, INDEX_NEXT);
 
@@ -108,8 +119,12 @@ struct net_device * netdev_alloc(const char *name,
 void netdev_free(struct net_device *dev) {
 	if (dev != NULL) {
 		dlist_del_init(&dev->rx_lnk);
+		dlist_del_init(&dev->tx_lnk);
 		skb_queue_purge(&dev->dev_queue);
-		sysfree(dev->priv);
+		skb_queue_purge(&dev->dev_queue_tx);
+		if (dev->priv) {
+			sysfree(dev->priv);
+		}
 		index_free(&netdev_index, dev->index);
 		pool_free(&netdev_pool, dev);
 	}
@@ -161,7 +176,7 @@ int netdev_open(struct net_device *dev) {
 		return 0;
 	}
 
-	if (dev->drv_ops->start != NULL) {
+	if (dev->drv_ops != NULL && dev->drv_ops->start != NULL) {
 		ret = dev->drv_ops->start(dev);
 		if (ret != 0) {
 			return ret;
@@ -317,3 +332,27 @@ int netdev_set_irq(struct net_device *dev, int irq_num) {
 
 	return 0;
 }
+
+unsigned int if_nametoindex(const char *name) {
+	struct net_device *dev;
+
+	assert(name);
+
+	dev = netdev_get_by_name(name);
+
+	if (dev) {
+		return dev->index;
+	} else {
+		errno = ENOENT;
+		return 0;
+	}
+}
+
+void netif_carrier_on(struct net_device *dev) {
+	netlink_notify_newlink(dev);
+}
+
+void netif_carrier_off(struct net_device *dev) {
+	netlink_notify_dellink(dev);
+}
+

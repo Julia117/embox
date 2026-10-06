@@ -12,7 +12,7 @@
 #include <netdb.h>
 #include <stddef.h>
 #include <string.h>
-#include <util/array.h>
+#include <lib/libds/array.h>
 
 #define MODOPS_MAX_NAME_LEN OPTION_GET(NUMBER, max_name_len)
 #define MODOPS_MAX_ALIASES_NUM OPTION_GET(NUMBER, max_aliases_num)
@@ -36,6 +36,10 @@ struct hostent * hostent_create(void) {
 	hentry_aliases_sz = hentry_addrs_sz = 0;
 
 	return &hentry_storage;
+}
+
+void hostent_destroy(struct hostent *he) {
+	(void)he;
 }
 
 int hostent_set_name(struct hostent *he, const char *name) {

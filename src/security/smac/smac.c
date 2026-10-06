@@ -13,21 +13,22 @@
 #include <string.h>
 #include <stdio.h> /* snprintf */
 #include <fcntl.h> /* O_CREAT, O_APPEND */
-#include <fs/flags.h>
-#include <fs/flags.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+
 #include <kernel/task.h>
 #include <kernel/task/kernel_task.h>
 #include <embox/unit.h>
-#include <security/seculog.h>
+#include <security/seculog/seculog.h>
 
-#include <security/smac.h>
+#include <security/smac/smac.h>
 #include <kernel/task/resource/security.h>
 #include <config/embox/kernel/task/resource/security.h>
 #include <framework/mod/options.h>
 
 EMBOX_UNIT_INIT(smac_init);
 
-static_assert(sizeof(struct smac_task) == OPTION_MODULE_GET(embox__kernel__task__resource__security, NUMBER, security_size));
+static_assert(sizeof(struct smac_task) == OPTION_MODULE_GET(embox__kernel__task__resource__security, NUMBER, security_size), "");
 
 #define SMAC_MAX_ENTS OPTION_GET(NUMBER, max_entries)
 #define SMAC_AUDIT OPTION_GET(NUMBER, audit)
@@ -71,7 +72,7 @@ static void audit_log(const char *subject, const char *object,
 	struct passwd pwd_buf;
 	struct passwd *pwd;
 	time_t time;
-	struct timespec ts;
+	struct timeval tv;
 
 	if (no_audit) {
 		return;
@@ -82,8 +83,8 @@ static void audit_log(const char *subject, const char *object,
 	getpwuid_r(uid, &pwd_buf, pwd_sbuf, sizeof(pwd_sbuf), &pwd);
 	no_audit = 0;
 
-	getnsofday(&ts, NULL);
-	time = (time_t)((uint32_t)ts.tv_sec - SECONDS_1900_1970);
+	gettimeofday(&tv, NULL);
+	time = (time_t)((uint32_t)tv.tv_sec - SECONDS_1900_1970);
 	snprintf(line, AUDITLINE_LEN,
 			"[%s] cmd=%s subject=%s(label=%s), object=%s, file=%s, request=%c%c%c, action=%s, function=%s\n",
 			ctime(&time),
@@ -92,9 +93,9 @@ static void audit_log(const char *subject, const char *object,
 			subject,
 			object,
 			audit->file_name ? audit->file_name : "",
-			may_access & FS_MAY_READ  ? 'r' : '-',
-			may_access & FS_MAY_WRITE ? 'w' : '-',
-			may_access & FS_MAY_EXEC  ? 'x' : '-',
+			may_access & S_IROTH  ? 'r' : '-',
+			may_access & S_IWOTH ? 'w' : '-',
+			may_access & S_IXOTH  ? 'x' : '-',
 			ret == 0 ? "ALLOW" : "DENINED",
 			audit->fn_name);
 
@@ -117,14 +118,14 @@ int smac_access(const char *s_subject, const char *s_object,
 
 	/* 2 */
 	if (0 == strcmp(s_subject, smac_hat)
-		&& 0 == (~(FS_MAY_READ | FS_MAY_EXEC) & may_access)) {
+		&& 0 == (~(S_IROTH | S_IXOTH) & may_access)) {
 		ret = 0;
 		goto out;
 	}
 
 	/* 3 */
 	if (0 == strcmp(s_object, smac_floor)
-		&& 0 == (~(FS_MAY_READ | FS_MAY_EXEC) & may_access)) {
+		&& 0 == (~(S_IROTH | S_IXOTH) & may_access)) {
 		ret = 0;
 		goto out;
 	}
@@ -177,7 +178,7 @@ int smac_getenv(void *buf, size_t buflen, struct smac_env **oenv) {
 	smac_audit_prepare(&audit, __func__, NULL);
 
 	if (0 != (res = smac_access(task_self_resource_security(), smac_admin,
-					FS_MAY_READ, &audit))) {
+					S_IROTH, &audit))) {
 		return res;
 	}
 
@@ -199,7 +200,7 @@ int smac_flushenv(void) {
 	smac_audit_prepare(&audit, __func__, NULL);
 
 	if (0 != (res = smac_access(task_self_resource_security(), smac_admin,
-					FS_MAY_WRITE, &audit))) {
+					S_IWOTH, &audit))) {
 		return res;
 	}
 
@@ -216,7 +217,7 @@ int smac_addenv(const char *subject, const char *object, int flags) {
 	smac_audit_prepare(&audit, __func__, NULL);
 
 	if (0 != (res = smac_access(task_self_resource_security(), smac_admin,
-					FS_MAY_WRITE, &audit))) {
+					S_IWOTH, &audit))) {
 		return res;
 	}
 
@@ -258,7 +259,7 @@ int smac_labelset(const char *label) {
 	smac_audit_prepare(&audit, __func__, NULL);
 
 	if (0 != (res = smac_access(task_self_resource_security(), smac_admin,
-					FS_MAY_WRITE, &audit))) {
+					S_IWOTH, &audit))) {
 		return res;
 	}
 
@@ -278,7 +279,7 @@ int smac_labelget(char *label, size_t len) {
 	smac_audit_prepare(&audit, __func__, NULL);
 
 	if (0 != (res = smac_access(task_self_resource_security(), smac_admin,
-					FS_MAY_READ, &audit))) {
+					S_IROTH, &audit))) {
 		return res;
 	}
 
@@ -299,7 +300,7 @@ static int smac_init(void) {
 	 * Otherwise boot could hang at mount, etc.
 	 */
  	 smac_addenv(smac_admin, smac_def_file_label,
-			FS_MAY_READ | FS_MAY_WRITE | FS_MAY_EXEC);
+			S_IROTH | S_IWOTH | S_IXOTH);
 
 	return 0;
 }

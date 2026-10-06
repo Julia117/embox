@@ -13,7 +13,7 @@
 #include <kernel/task/thread_key_table.h>
 #include <kernel/task/resource/thread_key_table.h>
 #include <kernel/thread/sync/mutex.h>
-#include <util/indexator.h>
+#include <lib/libds/indexator.h>
 
 int task_thread_key_exist(struct task *task, size_t idx) {
 	assert(task);
@@ -28,7 +28,8 @@ int task_thread_key_create(struct task *task, size_t *idx) {
 
 	mutex_lock(&kt->mutex);
 	{
-		if(index_locked(&kt->indexator, *idx)) {
+		*idx = index_find(&kt->indexator, INDEX_MIN);
+		if (*idx == INDEX_NONE) {
 			res = -EBUSY;
 			goto out;
 		}
@@ -41,7 +42,7 @@ out:
 }
 
 int task_thread_key_destroy(struct task *task, size_t idx) {
-	int res;
+	int res = ENOERR;
 	struct thread_key_table *kt;
 
 	kt = task_resource_thread_key_table(task);
@@ -55,6 +56,6 @@ int task_thread_key_destroy(struct task *task, size_t idx) {
 		index_unlock(&kt->indexator, idx);
 	}
 out:
-	mutex_lock(&kt->mutex);
+	mutex_unlock(&kt->mutex);
 	return res;
 }

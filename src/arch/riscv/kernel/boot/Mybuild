@@ -1,0 +1,5 @@
+package embox.arch.riscv.kernel
+
+module boot {
+	source "boot.S"
+}

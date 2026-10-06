@@ -1,0 +1,165 @@
+#include <gen_board_conf.h>
+#include <stm32.h>
+
+struct uart_conf uarts[] = {
+	[1] = {
+		.status = DISABLED,
+		.name = "USART1",
+		.dev = {
+			.name = "USART1",
+			.irqs = {
+				VAL("", 37),
+			},
+			.pins = {
+				PIN("TX", GPIO_PORT_C, 4, GPIO_MODE_ALT, AF7),
+				PIN("RX", GPIO_PORT_C, 5, GPIO_MODE_ALT, AF7),
+			},
+			.clocks = {
+				VAL("UART", CLK_USART1),
+			}
+		},
+		.baudrate = 115200,
+	},
+	[2] = {
+		.status = DISABLED,
+		.name = "USART2",
+		.dev = {
+			.name = "USART2",
+			.irqs = {
+				VAL("", 38),
+			},
+			.pins = {
+				PIN("TX", GPIO_PORT_A, 2, GPIO_MODE_ALT, AF7),
+				PIN("RX", GPIO_PORT_A, 3, GPIO_MODE_ALT, AF7),
+			},
+			.clocks = {
+				VAL("UART", CLK_USART2),
+			}
+		},
+		.baudrate = 115200,
+	},
+	[3] = {
+		.status = DISABLED,
+		.name = "USART3",
+		.dev = {
+			.name = "USART3",
+			.irqs = {
+				VAL("", 71),
+			},
+			.pins = {
+				PIN("TX", GPIO_PORT_C, 10, GPIO_MODE_ALT, AF8),
+				PIN("RX", GPIO_PORT_C, 10, GPIO_MODE_ALT, AF8),
+			},
+			.clocks = {
+				VAL("UART", CLK_USART3),
+			}
+		},
+		.baudrate = 115200,
+	},
+};
+
+struct pwm_conf pwms[] = {
+	[0] = {
+		.name = "PWM0",
+		.instance = VAL("INSTANCE", TIM2),
+		.channel = VAL("CHANNEL_TIM", CHANNEL_TIM2),
+		.servo_low = VAL("LOW", 430),
+		.servo_high = VAL("HIGH", 2175),
+		.dev = {
+			.name = "PWM0",
+			.pins = {
+				PIN("TIM",  GPIO_PORT_D, 4, GPIO_MODE_ALT | GPIO_MODE_OUT | GPIO_MODE_OUT_PUSH_PULL | GPIO_MODE_IN_PULL_UP, AF2),
+			},
+			.clocks = {
+				//VAL("GPIO",  CLK_GPIOD),
+				VAL("TIM",  CLK_TIM2),
+			}
+		},
+	},
+};
+
+struct led_conf leds[] = {
+	[0] = {
+		.name = "LED3",
+		.port = VAL("", GPIO_PORT_E),
+		.pin = VAL("", 9),
+		.level = VAL("", GPIO_PIN_HIGH),
+	},
+	[1] = {
+		.name = "LED4",
+		.port = VAL("", GPIO_PORT_E),
+		.pin = VAL("", 8),
+		.level = VAL("", GPIO_PIN_HIGH),
+	},
+	[2] = {
+		.name = "LED5",
+		.port = VAL("", GPIO_PORT_E),
+		.pin = VAL("", 10),
+		.level = VAL("", GPIO_PIN_HIGH),
+	},
+	[3] = {
+		.name = "LED6",
+		.port = VAL("", GPIO_PORT_E),
+		.pin = VAL("PIN", 15),
+		.level = VAL("", GPIO_PIN_HIGH),
+	},
+	[4] = {
+		.name = "LED7",
+		.port = VAL("", GPIO_PORT_E),
+		.pin = VAL("", 11),
+		.level = VAL("", GPIO_PIN_HIGH),
+	},
+	[5] = {
+		.name = "LED8",
+		.port = VAL("", GPIO_PORT_E),
+		.pin = VAL("", 14),
+		.level = VAL("", GPIO_PIN_HIGH),
+	},
+	[6] = {
+		.name = "LED9",
+		.port = VAL("", GPIO_PORT_E),
+		.pin = VAL("", 12),
+		.level = VAL("", GPIO_PIN_HIGH),
+	},
+	[7] = {
+		.name = "LED10",
+		.port = VAL("PORT", GPIO_PORT_E),
+		.pin = VAL("PIN", 13),
+		.level = VAL("", GPIO_PIN_HIGH),
+	},
+};
+
+struct spi_conf spis[] = {
+	[1] = {
+		.status = ENABLED,
+		.name = "SPI1",
+		.dev = {
+			.name = "SPI1",
+			.pins = {
+				PIN("SCK",  GPIO_PORT_B, 5, GPIO_MODE_ALT, AF5),
+				PIN("MISO", GPIO_PORT_B, 6, GPIO_MODE_ALT, AF5),
+				PIN("MOSI", GPIO_PORT_B, 7, GPIO_MODE_ALT, AF5),
+				/* PIN("CS",   GPIO_PORT_B, 2, GPIO_MODE_OUT, NOAF), */
+			},
+			.clocks = {
+				VAL("SPI",  CLK_SPI1),
+			}
+		},
+		.spi_devs[0] = {
+			.status = ENABLED,
+			.name = "SPI1_0",
+			.bits_per_word = 8,
+			.bus_num = 1,
+			.idx     = 0,
+			.dev = {
+				.name = "SPI1_0",
+				/*.pins = {
+					PIN("CS",   GPIO_PORT_A, 15, GPIO_MODE_OUT, NOAF),
+				},*/
+			},
+		},
+	},
+
+};
+
+EXPORT_CONFIG(UART(uarts), PWM(pwms), LED(leds), SPI(spis))

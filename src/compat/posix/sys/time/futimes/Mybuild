@@ -1,0 +1,11 @@
+package embox.compat.posix.sys.time
+
+@DefaultImpl(futimes_stub)
+abstract module futimes {
+}
+
+module futimes_stub extends futimes {
+	option string log_level = "LOG_DEBUG"
+
+	source "futimes_stub.c"
+}

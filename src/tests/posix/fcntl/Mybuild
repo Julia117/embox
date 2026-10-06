@@ -13,4 +13,7 @@ module fcntl_test {
 
 module open_test {
 	source "open_test.c"
+
+	@InitFS
+	source "testfile.txt"
 }

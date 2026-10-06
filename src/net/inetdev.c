@@ -9,13 +9,18 @@
 
 #include <assert.h>
 #include <errno.h>
-#include <framework/mod/options.h>
-#include <mem/misc/pool.h>
-#include <net/inetdevice.h>
-#include <net/netdevice.h>
 #include <stddef.h>
 #include <string.h>
-#include <util/dlist.h>
+
+#include <lib/libds/dlist.h>
+
+#include <mem/misc/pool.h>
+
+#include <net/netlink.h>
+#include <net/inetdevice.h>
+#include <net/netdevice.h>
+
+#include <framework/mod/options.h>
 
 #define MODOPS_AMOUNT_INTERFACE OPTION_GET(NUMBER, amount_interface)
 
@@ -47,6 +52,8 @@ int inetdev_register_dev(struct net_device *dev) {
 
 	dlist_add_prev_entry(in_dev, &inetdev_list, lnk);
 
+	netlink_notify_newlink(dev);
+
 	return 0;
 }
 
@@ -62,6 +69,8 @@ int inetdev_unregister_dev(struct net_device *dev) {
 	if (in_dev == NULL) {
 		return -ESRCH;
 	}
+
+	netlink_notify_dellink(dev);
 
 	ret = netdev_unregister(dev);
 	if (ret != 0) {
@@ -156,7 +165,7 @@ in_addr_t inetdev_get_addr(struct in_device *in_dev) {
 }
 
 struct in_device * inetdev_get_first(void) {
-	return dlist_prev_entry_or_null(&inetdev_list, struct in_device, lnk);
+	return dlist_next_entry_or_null(&inetdev_list, struct in_device, lnk);
 }
 
 struct in_device * inetdev_get_next(struct in_device *in_dev) {
@@ -173,19 +182,18 @@ struct in_device * inetdev_get_next(struct in_device *in_dev) {
 }
 
 #include <linux/in.h>
-bool ip_is_local(in_addr_t addr, bool check_broadcast,
-		bool check_multicast) {
+int ip_is_local(in_addr_t addr, int opts) {
 	struct in_device *in_dev;
 
 	if (ipv4_is_loopback(addr)) {
 		return true;
 	}
 
-	if (check_broadcast && ipv4_is_broadcast(addr)) {
+	if ((opts & IP_LOCAL_BROADCAST) && ipv4_is_broadcast(addr)) {
 		return true;
 	}
 
-	if (check_multicast && ipv4_is_multicast(addr)) {
+	if ((opts & IP_LOCAL_MULTICAST) && ipv4_is_multicast(addr)) {
 		return true;
 	}
 
@@ -193,10 +201,34 @@ bool ip_is_local(in_addr_t addr, bool check_broadcast,
 		if (in_dev->ifa_address == addr) {
 			return true;
 		}
-		if (check_broadcast && (in_dev->ifa_broadcast == addr)) {
+		if ((opts & IP_LOCAL_BROADCAST) && (in_dev->ifa_broadcast == addr)) {
 			return true;
 		}
 	}
 
 	return false;
 }
+#if defined(NET_NAMESPACE_ENABLED) && (NET_NAMESPACE_ENABLED == 1)
+struct in_device * inetdev_get_by_name_netns(const char *name,
+					net_namespace_p net_ns) {
+	return inetdev_get_by_name(name);
+}
+
+struct in_device *inetdev_get_loopback_dev_netns(net_namespace_p net_ns) {
+	return inetdev_get_loopback_dev();
+}
+
+struct in_device * inetdev_get_next_net_ns(struct in_device *in_dev,
+					   net_namespace_p netns) {
+	return inetdev_get_next(in_dev);
+}
+
+struct in_device * inetdev_get_first_net_ns(net_namespace_p netns) {
+	return inetdev_get_first();
+}
+
+int ip_is_local_net_ns(in_addr_t addr, int opts,
+		net_namespace_p net_ns) {
+	return ip_is_local(addr, opts);
+}
+#endif

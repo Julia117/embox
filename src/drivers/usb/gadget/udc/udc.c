@@ -1,0 +1,148 @@
+/**
+ * @file
+ * @brief
+ *
+ * @author  Alexander Kalmuk
+ * @date    25.06.2020
+ */
+
+#include <util/log.h>
+
+#include <assert.h>
+#include <stdint.h>
+
+#include <drivers/usb/gadget/udc.h>
+#include <drivers/usb/gadget/gadget.h>
+
+static struct usb_udc *global_udc;
+
+int usb_gadget_udc_start(struct usb_udc *udc) {
+	assert(udc);
+	assert(udc->udc_ops);
+	assert(udc->udc_ops->uuo_udc_start);
+
+	log_debug("udc start name %s", udc->udc_name);
+
+	return udc->udc_ops->uuo_udc_start(udc);
+}
+
+int usb_gadget_ep_queue(struct usb_gadget_ep *ep,
+	                    struct usb_gadget_request *req) {
+	int res;
+	struct usb_udc *udc;
+	
+	udc = ep->udc;
+
+	assert(udc);
+	assert(udc->udc_ops);
+	assert(udc->udc_ops->uuo_ep_queue);
+
+	log_debug("udc usb_gadget_ep_queue actual_len=%d", req->actual_len);
+#if 0
+#if __MAX_LOG_LEVEL >= LOG_DEBUG
+	__log_handle(LOG_DEBUG, "request actual_len=%d\n", req->actual_len);
+
+	for(int i; i < req->actual_len; i += 8) {
+		__log_handle(LOG_DEBUG, "%x:%x:%x:%x:%x:%x:%x:%x\n",
+			req->buf[i + 0], req->buf[i + 1], req->buf[i + 2], req->buf[i + 3],
+			req->buf[i + 4], req->buf[i + 5], req->buf[i + 6], req->buf[i + 7]);
+
+		}
+#endif /* __MAX_LOG_LEVEL >= LOG_DEBUG */
+#endif
+
+	res = udc->udc_ops->uuo_ep_queue(ep, req);
+
+	return res;
+}
+
+int usb_gadget_ep_stall(struct usb_gadget_ep *ep,
+    const struct usb_control_header *ctrl) {
+	struct usb_udc *udc;
+
+	udc = ep->udc;
+
+	assert(udc);
+	assert(udc->udc_ops);
+
+	if (udc->udc_ops->uuo_ep_stall) {
+		return udc->udc_ops->uuo_ep_stall(ep, ctrl);
+	}
+
+	return -1;
+}
+
+void usb_gadget_ep_enable(struct usb_gadget_ep *ep) {
+	struct usb_udc *udc = ep->udc;
+
+	assert(udc);
+	assert(udc->udc_ops);
+	assert(udc->udc_ops->uuo_ep_enable);
+
+	log_debug("uusb_gadget_ep_enable %d", ep->nr);
+
+	udc->udc_ops->uuo_ep_enable(ep);
+}
+
+
+int usb_gadget_set_address(struct usb_udc *udc,
+			const struct usb_control_header *req) {
+	uint8_t dev_addr;
+
+	if ((req->w_index == 0U) && (req->w_length == 0U) && (req->w_value < 128U)) {
+		dev_addr = (uint8_t)(req->w_value) & 0x7FU;
+		if (udc->udc_ops->uuo_set_addr) {
+			log_debug("addr=0x%x", dev_addr);
+			udc->udc_ops->uuo_set_addr(udc, dev_addr);
+		} else {
+			return -1; /*have not handled yet */
+		}
+
+		//TODO: create function(CtlSendStatus)
+		//HAL_PCD_EP_Transmit(hpcd, 0x00U, NULL, 0U);
+	}
+	else {
+		//HAL_PCD_EP_SetStall(hpcd, 0x80U); //equivalent to CtlError()
+		//usb_gadget_ep_stall()
+		//HAL_PCD_EP_SetStall(hpcd, 0U);
+		//usb_gadget_ep_stall()
+	}
+
+	return 0;
+}
+
+void usb_gadget_udc_event(struct usb_udc *udc, int event) {
+	struct usb_gadget *gadget = udc->udc_composite->config;
+	struct usb_gadget_function *func = NULL, *prev_func = NULL;
+	int i;
+
+	if (!gadget) {
+		return;
+	}
+
+	for (i = 0;; i++) {
+		func = gadget->interfaces[i];
+		if (!func) {
+			break; /* all functions processed */
+		}
+
+		if (func == prev_func) {
+			continue;
+		}
+
+		if (func->ugf_ops->ugfo_event) {
+			func->ugf_ops->ugfo_event(func, event);
+		}
+
+		prev_func = func;
+	}
+}
+
+int usb_gadget_udc_register(struct usb_udc *udc) {
+	global_udc = udc;
+	return 0;
+}
+
+struct usb_udc *usb_gadget_find_udc(void) {
+	return global_udc;
+}

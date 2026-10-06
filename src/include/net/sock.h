@@ -17,12 +17,14 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#include <util/dlist.h>
+#include <lib/libds/dlist.h>
 
-#include <fs/idesc.h>
+#include <kernel/task/resource/idesc.h>
 #include <net/socket/sock_xattr.h>
 #include <net/skbuff.h>
 #include <netinet/in.h>
+
+#include <net/net_namespace.h>
 
 
 struct proto_sock; //TODO What does it mean
@@ -90,6 +92,10 @@ struct sock {
 	struct timeval last_packet_tstamp;
 	size_t addr_len;
 	int err;
+#if defined(NET_NAMESPACE_ENABLED) && (NET_NAMESPACE_ENABLED == 1)
+	net_namespace_p net_ns;
+#endif
+	struct net_device *sock_netdev;
 };
 
 static inline int sock_err(struct sock *sk) {
@@ -179,6 +185,7 @@ extern int sock_close(struct sock *sk);
 extern int sock_dgram_recvmsg(struct sock *sk, struct msghdr *msg, int flags);
 extern int sock_stream_recvmsg(struct sock *sk, struct msghdr *msg, int flags);
 
+#include <string.h>
 static inline void sock_update_tstamp(struct sock *sk, struct sk_buff *skb) {
 	memcpy(&sk->last_packet_tstamp, &skb->tstamp, sizeof(sk->last_packet_tstamp));
 }

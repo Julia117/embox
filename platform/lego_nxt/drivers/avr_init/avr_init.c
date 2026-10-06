@@ -9,7 +9,7 @@
 #include <embox/unit.h>
 #include <string.h>
 #include <hal/reg.h>
-#include <kernel/time/timer.h>
+#include <kernel/time/sys_timer.h>
 #include <drivers/at91sam7s256.h>
 #include <drivers/twi.h>
 #include <drivers/nxt/buttons.h>
@@ -61,7 +61,18 @@ static uint32_t avr_handler(void) {
 	} else {
 		avr_get_data(&data_from_avr);
 		buttons_updated((nxt_buttons_mask_t) data_from_avr.buttons_val);
+#ifdef __GNUC__
+#if __GNUC__ > 12
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Waddress-of-packed-member"
+#endif
+#endif
 		sensors_updated(data_from_avr.adc_value);
+#ifdef __GNUC__
+#if __GNUC__ > 12
+#pragma GCC diagnostic pop
+#endif
+#endif
 	}
 
 	return 0;
@@ -81,7 +92,7 @@ static int init(void) {
 
 	sensors_init();
 
-	result = timer_set(&avr_timer, TIMER_PERIODIC, 1, (sys_timer_handler_t) avr_handler, 0);
+	result = sys_timer_set(&avr_timer, SYS_TIMER_PERIODIC, 1, (sys_timer_handler_t) avr_handler, 0);
 
 	return result;
 }

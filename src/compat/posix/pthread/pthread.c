@@ -10,6 +10,8 @@
 #include <pthread.h>
 
 #include <kernel/thread.h>
+#include <kernel/thread/types.h>
+#include <kernel/thread/thread_stack.h>
 #include <util/err.h>
 
 
@@ -49,14 +51,6 @@ int pthread_attr_getschedpolicy(const pthread_attr_t *attr, int *policy) {
 int pthread_attr_getscope(const pthread_attr_t *attr, int *contentionscope) {
 	return -ENOSYS;
 }
-
-int pthread_attr_getstackaddr(const pthread_attr_t *attr, void **stackaddr) {
-	return -ENOSYS;
-}
-
-int pthread_attr_getstacksize(const pthread_attr_t *attr, size_t *stacksize) {
-	return -ENOSYS;
-}
 */
 int pthread_attr_init(pthread_attr_t *attr) {
 	attr->flags = 0;
@@ -69,9 +63,20 @@ int pthread_attr_init(pthread_attr_t *attr) {
 	}
 
 	attr->policy = SCHED_OTHER;
-	attr->sched_param.sched_priority = THREAD_PRIORITY_DEFAULT;
+	attr->sched_param.sched_priority = SCHED_OTHER_PRIORITY_NORM;
 
 	return ENOERR;
+}
+
+int pthread_getattr_np(pthread_t thread, pthread_attr_t *attr) {
+	attr->stack_size = thread_stack_get_size(thread);
+	attr->stack = thread_stack_get(thread);
+	attr->flags = 0;
+	if (thread->state & TS_DETACHED) {
+		attr->flags |= THREAD_FLAG_DETACHED;
+	}
+
+	return 0;
 }
 
 int pthread_attr_setdetachstate(pthread_attr_t *attr, int detachstate) {
@@ -102,7 +107,10 @@ int pthread_attr_setschedparam(pthread_attr_t *attr, const struct sched_param *p
 	//TODO move copy to other place
 	attr->sched_param.sched_priority = param->sched_priority;
 
+	return ENOERR;
+#if 0
 	return -ENOSYS;
+#endif
 }
 
 int pthread_attr_setschedpolicy(pthread_attr_t *attr, int policy) {
@@ -154,7 +162,7 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 	flags = detached | inherit | THREAD_FLAG_SUSPENDED;
 
 	t = thread_create(flags, start_routine, arg);
-	if (err(t)) {
+	if (ptr2err(t)) {
 		/*
 		 * The pthread_create() function will fail if:
 		 *
@@ -167,6 +175,9 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 		 *
 		 * The pthread_create() function will not return an error code of [EINTR].
 		 */
+		if (NULL == attr) {
+			pthread_attr_destroy(&def_attr);
+		}
 		return -EAGAIN;
 	}
 
@@ -177,6 +188,9 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 	thread_launch(t);
 	*thread = t;
 
+	if (NULL == attr) {
+		pthread_attr_destroy(&def_attr);
+	}
 	return ENOERR;
 }
 
@@ -199,8 +213,8 @@ int pthread_getconcurrency(void) {
 */
 
 int pthread_getschedparam(pthread_t thread, int *policy, struct sched_param *param) {
-	*policy = thread->schedee.policy;
-	param->sched_priority = thread_get_priority(thread);
+	*policy = thread->policy;
+	param->sched_priority = schedee_priority_get(&thread->schedee);
 
 	return ENOERR;
 }
@@ -234,15 +248,31 @@ int pthread_setconcurrency(int new_level) {
 */
 int pthread_setschedparam(pthread_t thread, int policy,
 		const struct sched_param *param) {
-	assert((policy != SCHED_FIFO && policy != SCHED_RR) ||
-			param->sched_priority >= 200, "In current realization you must "
-			"use SCHED_FIFO and SCHED_RR only with priority more or equal 200");
+	int sched_priority;
 
-	thread->schedee.policy = policy;
-	return thread_set_priority(thread, param->sched_priority);
+	if (param->sched_priority > SCHED_RT_PRIORITY_MIN) {
+		return -EINVAL;
+	}
+
+	if ( (policy == SCHED_OTHER) &&
+			( (SCHED_OTHER_PRIORITY_MIN < param->sched_priority) ||
+			  (SCHED_OTHER_PRIORITY_MAX > param->sched_priority) ) ) {
+		return -EINVAL;
+	}
+
+	if ( (policy == SCHED_FIFO || policy == SCHED_RR) &&
+			(param->sched_priority < SCHED_RT_PRIORITY_MIN) ) {
+			/* 1-99 -> 100-199 */
+			sched_priority = SCHED_RT_PRIORITY_MIN + param->sched_priority;
+	} else {
+			sched_priority = param->sched_priority;
+	}
+
+	thread->policy = policy;
+	return schedee_priority_set(&thread->schedee, sched_priority);
 }
 
 int pthread_setschedprio(pthread_t thread, int prio) {
-	return thread_set_priority(thread, (sched_priority_t)prio);
+	return schedee_priority_set(&thread->schedee, prio);
 }
 

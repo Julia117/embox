@@ -10,35 +10,33 @@
  */
 
 #include <assert.h>
-#include <stdio.h>
-#include <errno.h>
-#include <string.h>
-#include <stdlib.h>
-#include <unistd.h>
 #include <ctype.h>
-#include <termios.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <pwd.h>
-
-#include <readline/readline.h>
-#include <readline/history.h>
-
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <termios.h>
+#include <unistd.h>
 
 #include <cmd/cmdline.h>
 #include <cmd/shell.h>
-
-#include <util/array.h>
-
-#include <framework/cmd/api.h>
 #include <embox/unit.h>
-
+#include <framework/cmd/api.h>
 #include <kernel/task.h>
-
-
+#include <lib/libds/array.h>
+#include <mem/sysmalloc.h>
+#include <readline/history.h>
+#include <readline/readline.h>
 
 #define PROMPT_FMT OPTION_STRING_GET(prompt)
 
 #define RICH_PROMPT_SUPPORT OPTION_GET(NUMBER, rich_prompt_support)
+
+#define UNSET_NODELAY_MODE OPTION_GET(NUMBER, unset_nodelay_mode)
 
 #define BUILTIN_COMMANDS OPTION_STRING_GET(builtin_commands)
 
@@ -53,7 +51,7 @@ struct cmd_data {
 	volatile int started;
 };
 
-static char * cmd_generator(const char *text, int state) {
+static char *cmd_generator(const char *text, int state) {
 	static int last_ind;
 	static size_t text_len;
 	int ind;
@@ -78,14 +76,11 @@ static char * cmd_generator(const char *text, int state) {
 	return NULL;
 }
 
-static char ** cmd_completion(const char *text, int start,
-		int end) {
+static char **cmd_completion(const char *text, int start, int end) {
 	char **matches;
 
-
 	if (start == 0) {
-		matches = rl_completion_matches((char *)text,
-				&cmd_generator);
+		matches = rl_completion_matches((char *)text, &cmd_generator);
 	}
 	else {
 		matches = NULL;
@@ -103,7 +98,7 @@ static int is_builtin(const char *cname) {
 
 	while (1) {
 		if ((0 == strncmp(cname, tmp, cname_len))
-				&& ((tmp[cname_len] == ' ') || (tmp[cname_len] == '\0'))) {
+		    && ((tmp[cname_len] == ' ') || (tmp[cname_len] == '\0'))) {
 			return 1;
 		}
 
@@ -125,11 +120,10 @@ static int process_builtin(struct cmd_data *cdata) {
 	ret = cmd_exec(cdata->cmd, cdata->argc, cdata->argv);
 	if (ret != 0) {
 		printf("tish: %s: Command returned with code %d: %s\n",
-				cmd_name(cdata->cmd), ret, strerror(-ret));
+		    cmd_name(cdata->cmd), ret, strerror(-ret));
 
 		return ret;
 	}
-
 
 	return 0;
 }
@@ -142,7 +136,6 @@ static void cmd_data_copy(struct cmd_data *dst, const struct cmd_data *src) {
 
 	dst_argv_p = dst->cmdline_buf;
 	for (i_arg = 0; i_arg < src->argc; i_arg++) {
-
 		strcpy(dst_argv_p, src->argv[i_arg]);
 		dst->argv[i_arg] = dst_argv_p;
 
@@ -156,7 +149,24 @@ static void cmd_data_copy(struct cmd_data *dst, const struct cmd_data *src) {
 	dst->on_fg = src->on_fg;
 }
 
-static void * run_cmd(void *data) {
+static void set_task_name(struct cmd_data *cdata) {
+	char buf[SHELL_INPUT_BUFF_SZ];
+	char *ptr;
+	int i;
+
+	ptr = buf;
+
+	for (i = 0; i < cdata->argc; i++) {
+		if (i > 0) {
+			*ptr++ = ' ';
+		}
+		ptr = stpcpy(ptr, cdata->argv[i]);
+	}
+
+	task_set_name(task_self(), cdata->argv[0]);
+}
+
+static void *run_cmd(void *data) {
 	int ret;
 	struct cmd_data cdata;
 
@@ -164,15 +174,17 @@ static void * run_cmd(void *data) {
 
 	((struct cmd_data *)data)->started = 1;
 
+	set_task_name(&cdata);
+
 	if (-1 == tcsetpgrp(STDIN_FILENO, getpid())) {
 		/* running noninteractive */
 	}
 
 	ret = cmd_exec(cdata.cmd, cdata.argc, cdata.argv);
 	if (ret != 0) {
-		printf("%s: Command returned with code %d: %s\n",
-				cmd_name(cdata.cmd), ret, strerror(-ret));
-		return (void *)ret; /* error: ret */
+		printf("%s: Command returned with code %d: %s\n", cmd_name(cdata.cmd),
+		    ret, strerror(-ret));
+		return (void *)(uintptr_t)ret; /* error: ret */
 	}
 
 	return NULL; /* ok */
@@ -184,17 +196,17 @@ static int process_external(struct cmd_data *cdata) {
 
 	cdata->started = 0;
 
-	pid = new_task(cdata->argv[0], run_cmd, cdata);
+	pid = new_task("", run_cmd, cdata);
 	if (pid < 0) {
 		return pid;
 	}
 
 	if (cdata->on_fg) {
-
 		waitpid(pid, &ret, 0);
 		assert(WIFEXITED(ret));
 		ret = WEXITSTATUS(ret);
-	} else {
+	}
+	else {
 		while (cdata->started == 0) {
 			sleep(0);
 		}
@@ -205,7 +217,6 @@ static int process_external(struct cmd_data *cdata) {
 }
 
 static int tish_cdata_fill(const char *cmdline, struct cmd_data *cdata) {
-
 	if (strlen(cmdline) >= SHELL_INPUT_BUFF_SZ) {
 		return -EINVAL;
 	}
@@ -224,7 +235,8 @@ static int tish_cdata_fill(const char *cmdline, struct cmd_data *cdata) {
 
 	if (0 != strcmp(cdata->argv[cdata->argc - 1], "&")) {
 		cdata->on_fg = true;
-	} else {
+	}
+	else {
 		cdata->on_fg = false;
 		cdata->argv[cdata->argc--] = NULL;
 	}
@@ -248,7 +260,8 @@ static int tish_exec(const char *cmdline) {
 
 	if (is_builtin(cdata.argv[0])) {
 		res = process_builtin(&cdata);
-	} else {
+	}
+	else {
 		res = process_external(&cdata);
 	}
 
@@ -273,7 +286,6 @@ static int rich_prompt(const char *fmt, char *buf, size_t len) {
 	int ret, after_percent;
 
 	uid = getuid();
-	pwd = getpwuid(uid);
 	after_percent = 0;
 
 	for (; *fmt != '\0'; fmt++) {
@@ -285,7 +297,8 @@ static int rich_prompt(const char *fmt, char *buf, size_t len) {
 			if (*fmt != '%') {
 				*buf++ = *fmt;
 				len--;
-			} else {
+			}
+			else {
 				after_percent = 1;
 			}
 			continue;
@@ -298,8 +311,9 @@ static int rich_prompt(const char *fmt, char *buf, size_t len) {
 			ret = snprintf(buf, len, "%c", *fmt);
 			break;
 		case 'u':
+			pwd = getpwuid(uid);
 			ret = pwd != NULL ? snprintf(buf, len, "%s", pwd->pw_name)
-					: snprintf(buf, len, "%d", uid);
+			                  : snprintf(buf, len, "%d", uid);
 			break;
 		case 'h':
 			ret = snprintf(buf, len, "embox");
@@ -323,10 +337,22 @@ static int rich_prompt(const char *fmt, char *buf, size_t len) {
 	return 0;
 }
 
+#if UNSET_NODELAY_MODE
+static void sh_unset_nodelay_mode(void) {
+	int orig_ifd_flags = fcntl(STDIN_FILENO, F_GETFL, 0);
+	if (orig_ifd_flags & O_NONBLOCK) {
+		if (fcntl(STDIN_FILENO, F_SETFL, orig_ifd_flags & ~O_NONBLOCK) == -1) {
+			printf("cant unset_nodelay_mode\n");
+		}
+	}
+}
+#endif
+
 static void tish_run(void) {
 	char *line;
 	char prompt_buf[PROMPT_BUF_LEN];
 	const char *prompt;
+	int err;
 
 	/**
 	 * Set the completion callback. This will be called every time the
@@ -335,6 +361,10 @@ static void tish_run(void) {
 	readline_init();
 	rl_attempted_completion_function = cmd_completion;
 	rl_bind_key('\t', rl_complete);
+
+#if UNSET_NODELAY_MODE
+	sh_unset_nodelay_mode();
+#endif
 
 #if 0
 	/**
@@ -351,8 +381,10 @@ static void tish_run(void) {
 	 */
 	while (1) {
 		if (RICH_PROMPT_SUPPORT) {
-			prompt = 0 == rich_prompt(PROMPT_FMT, prompt_buf,
-					ARRAY_SIZE(prompt_buf)) ? &prompt_buf[0] : PROMPT_FMT;
+			prompt =
+			    0 == rich_prompt(PROMPT_FMT, prompt_buf, ARRAY_SIZE(prompt_buf))
+			        ? &prompt_buf[0]
+			        : PROMPT_FMT;
 		}
 		else {
 			prompt = PROMPT_FMT;
@@ -369,23 +401,36 @@ static void tish_run(void) {
 		/* Do something with the string. */
 		if (line[0] != '\0' && line[0] != '/') {
 			add_history(line); /* Add to the history. */
-			tish_exec(line);
-		} else if (!strncmp(line,"/historylen",11)) {
+			err = tish_exec(line);
+			if (err)
+				printf("tish error: #%d\n", err);
+		}
+		else if (!strncmp(line, "/historylen", 11)) {
 			/* The "/historylen" command will change the history len. */
-			int len = atoi(line+11);
+			int len = atoi(line + 11);
 			stifle_history(len);
-		} else if (line[0] == '/') {
+		}
+		else if (line[0] == '/') {
 			printf("Unreconized command: %s\n", line);
 		}
 
+		readline_free(line);
+
 		tish_collect_bg_childs();
 
-		free(line);
+#if UNSET_NODELAY_MODE
+		sh_unset_nodelay_mode();
+#endif
 	}
 }
 
 SHELL_DEF({
-	.name = "tish",
-	.exec = tish_exec,
-	.run  = tish_run,
-	});
+    .name = "tish",
+    .exec = tish_exec,
+    .run = tish_run,
+});
+
+int main(int argc, char **argv) {
+	tish_run();
+	return 0;
+}

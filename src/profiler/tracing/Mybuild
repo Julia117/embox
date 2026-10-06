@@ -2,6 +2,8 @@ package embox.profiler
 
 @DefaultImpl(no_tracing)
 abstract module trace {
+	@IncludeExport(path="profiler/tracing")
+	source "trace.h"
 }
 
 module no_tracing extends trace {
@@ -16,7 +18,7 @@ module tracing extends trace {
 	source "__cyg_profile.c"
 	depends embox.kernel.timer.itimer
 	depends embox.kernel.time.clock_source
-	depends embox.util.hashtable
+	@NoRuntime depends embox.lib.libds
 	depends embox.lib.debug.symbol
 
 	depends cyg_profile

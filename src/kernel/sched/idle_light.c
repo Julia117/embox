@@ -1,29 +1,36 @@
-#include <util/err.h>
-#include <hal/arch.h>
+/**
+ * @file
+ * @brief
+ *
+ * @author  Vita Loginova
+ * @date    08.12.2014
+ */
+#include <hal/cpu_idle.h>
 #include <kernel/lthread/lthread.h>
-#include <kernel/lthread/lthread_priority.h>
+#include <kernel/sched.h>
 
-static void *idle_run(void *arg) {
-	arch_idle();
-	sched_wakeup(schedee_get_current());
-	return NULL;
+static struct lthread idle;
+
+static int idle_run(struct lthread *self) {
+	arch_cpu_idle();
+	lthread_launch(self);
+	return 0;
 }
 
 int idle_thread_create(void) {
-	struct lthread *lt;
+	lthread_init(&idle, idle_run);
 
-	lt = lthread_create(idle_run, NULL);
-	if (0 != err(lt)) {
-		return err(lt);
-	}
-
-	sched_change_priority(&lt->schedee, SCHED_PRIORITY_MIN);
-#if 0 //XXX
+	schedee_priority_set(&idle.schedee, SCHED_PRIORITY_MIN);
+#if 0 //XX
 	cpu_init(cpu_get_id(), t);
 #else
-	sched_affinity_set(&lt->schedee.affinity, 1 << cpu_get_id());
+	sched_affinity_set(&idle.schedee.affinity, 1 << cpu_get_id());
 #endif
-	lthread_launch(lt);
+	lthread_launch(&idle);
 
 	return 0;
+}
+
+int schedee_is_idle(struct schedee *s) {
+	return &idle.schedee == s;
 }

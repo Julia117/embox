@@ -1,18 +1,41 @@
 package embox.fs.driver
 
-module fat {
+@DefaultImpl(fat_old)
+abstract module fat {
+	option string log_level="LOG_NONE"
+	option number default_fat_version = 32
+
+	option number inode_quantity=16
+	option number fat_descriptor_quantity=4
+	option number fat_max_sector_size = 512
+
+	option boolean support_long_names = true
+
 	@IncludeExport(path="fs")
 	source "fat.h"
 
-	source "fat.c"
+	source "fat_common.c"
 	source "fatfs_subr.c"
-	option number inode_quantity=64
-	option number fat_descriptor_quantity=4
-	option number fat_max_sector_size=512
+	source "fat_common_mem.c"
+	source "fat_fops.c"
+	source "fat_inode_ops.c"
 
-	depends embox.fs.node, embox.fs.driver.repo
+	source "fatfs_drv.c"
+
+	depends embox.driver.block_dev
+}
+
+module fat_old extends fat {
+	source "fat_oldfs.c"
+
+	depends embox.fs.node
 	depends embox.fs.driver.devfs
 	depends embox.mem.page_api
 	depends embox.mem.pool
 }
 
+module fat_dvfs extends fat {
+	source "fat_dvfs.c"
+
+	depends embox.fs.dvfs.core
+}

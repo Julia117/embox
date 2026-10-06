@@ -8,8 +8,8 @@
  * @author Eldar Abusalimov
  */
 
-#ifndef ASSERT_H_
-#define ASSERT_H_
+#ifndef COMPAT_LIBC_ASSERT_H_
+#define COMPAT_LIBC_ASSERT_H_
 
 #include <module/embox/compat/libc/assert.h>
 
@@ -26,8 +26,11 @@
  * @param message
  *   Optional message in @c printf format.
  */
-#define assert(condition, message...) \
-	  ({__assert(condition, #condition, message);})
+#define assert(condition) \
+	  ({__assert(condition, #condition, "");})
+
+#define assertf(condition, ...) \
+	  ({__assert(condition, #condition, __VA_ARGS__);})
 
 /* Hide assert internals from CDT macro expansion and code formatter. */
 #ifdef __CDT_PARSER__
@@ -47,10 +50,16 @@ __END_DECLS
 
 /* It's an ability to perform check like ususal assert() does, but in compile time
  * It'll be superseded by _Static_assert() since gcc-4.6
+ *
+ * Version before gcc-4.6:
+ *
+ * #define static_assert(cond, msg) \
+ *	  extern void __static_assert(int [!!(cond) - 1])
+ *
  */
 #ifndef __cplusplus
-#define static_assert(cond) \
-	extern void __static_assert(int [!!(cond) - 1])
+#define static_assert(cond, msg) \
+	_Static_assert(cond, msg)
 #endif /* !__cplusplus */
 
-#endif /* ASSERT_H_ */
+#endif /* COMPAT_LIBC_ASSERT_H_ */

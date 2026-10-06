@@ -1,0 +1,17 @@
+package embox.arch.riscv.kernel
+
+module entry {
+	option string log_level="LOG_EMERG"
+	option number tvec_alignment=2
+
+	@IncludeExport(path="riscv")
+	source "exception.h"
+
+	source "entry.S"
+	source "exc_handler.c"
+	source "irq_handler.c"
+}
+
+module exception_table {
+	source "exception_table.c"
+}

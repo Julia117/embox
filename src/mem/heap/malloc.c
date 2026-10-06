@@ -9,14 +9,13 @@
 #include <errno.h>
 #include <util/err.h>
 #include <unistd.h>
-#include <util/dlist.h>
+#include <lib/libds/dlist.h>
 
 #include <kernel/task.h>
 #include <kernel/task/kernel_task.h>
 #include <kernel/task/resource/task_heap.h>
 #include <kernel/printk.h>
-
-#include "mspace_malloc.h"
+#include <mem/heap/mspace_malloc.h>
 
 static struct dlist_head *task_self_mspace(void) {
 	struct task_heap *task_heap;
@@ -74,10 +73,13 @@ void *realloc(void *ptr, size_t size) {
 		mspace_free(ptr, task_self_mspace());
 		return NULL; /* ok */
 	}
+	if (ptr == NULL) {
+		return malloc(size);
+	}
 	/* XXX same as in free() above */
-	if (0 > err(ret = mspace_realloc(ptr, size, task_self_mspace()))) {
+	if (0 > ptr2err(ret = mspace_realloc(ptr, size, task_self_mspace()))) {
 		printk("***** realloc: pointer is not in current task, try realloc in kernel task...\n");
-		if (0 > err(ret = mspace_realloc(ptr, size, kernel_task_mspace()))) {
+		if (0 > ptr2err(ret = mspace_realloc(ptr, size, kernel_task_mspace()))) {
 			assert(0);
 		}
 	}
@@ -90,3 +92,9 @@ void *calloc(size_t nmemb, size_t size) {
 		return NULL; /* ok */
 	return mspace_calloc(nmemb, size, task_self_mspace());
 }
+
+int posix_memalign(void **memptr, size_t alignment, size_t size) {
+	*memptr = memalign(alignment, size);
+	return 0;
+}
+

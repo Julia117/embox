@@ -1,0 +1,18 @@
+package platform.stm32.f4.nucleo_f410rb
+
+@BuildArtifactPath(cppflags="-DSTM32F410Rx -DUSE_STM32F4XX_NUCLEO")
+static module nucleo_f410rb_conf extends third_party.bsp.stmf4cube.stm32f4_conf {
+	@IncludeExport(path="")
+	source "cube_conf.h"
+}
+
+@Build(stage=1)
+@BuildDepends(nucleo_f410rb_conf)
+@BuildDepends(third_party.bsp.stmf4cube.cube)
+static module bsp extends third_party.bsp.st_bsp_api {
+	source "clock_config.c"
+
+	@NoRuntime depends third_party.bsp.stmf4cube.cube
+	@NoRuntime depends nucleo_f410rb_conf
+	@NoRuntime depends platform.stm32.stm32cube_compat
+}

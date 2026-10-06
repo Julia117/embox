@@ -13,8 +13,7 @@ OUTPUT_ARCH(microblaze)
 ENTRY(_start)
 
 MEMORY {
-	MEMORY_REGION(RAM)
-	MEMORY_REGION(ROM)
+	#include <regions.lds.h>
 }
 
 _ram_base = ORIGIN(RAM);
@@ -25,7 +24,7 @@ SECTIONS {
 		*(.trap_table.text)
 		*(.text)
 		*(.text.*)
-	}
+	} SECTION_REGION(text) :text
 
 	_bstart = _bss_vma;
 	_bend = _bstart + _bss_len;

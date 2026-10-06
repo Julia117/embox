@@ -14,12 +14,15 @@ package third_party.cmd
 	''')
 module sqlite3 {
 	@AddPrefix("^BUILD/extbld/^MOD_PATH/install")
-	@Rule(script="$(EXTERNAL_MAKE) -f $(abspath $(ROOT_DIR))/mk/main-stripping.mk TARGET_APP='$(module_id)' FILE_APP='$(abspath $@)'")
+	@Rule(script="$(MAIN_STRIPPING)")
 	source "strip.sqlite3.o"
 
 	@NoRuntime depends sqlite3_stubs
 	@NoRuntime depends embox.framework.cmd
 	@NoRuntime depends embox.lib.readline_api
+
+	depends embox.compat.posix.sys.resource
+	depends embox.compat.posix.sys.mman.mmap_api
 
 	@InitFS
 	source "demo_create.sql", "demo_insert.sql"
@@ -31,5 +34,5 @@ module sqlite3_stubs {
 
 	@NoRuntime depends embox.kernel.task.resource.errno
 	@NoRuntime depends embox.compat.libc.str
-	@NoRuntime depends embox.lib.Printk
+	@NoRuntime depends embox.lib.printk
 }

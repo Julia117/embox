@@ -1,5 +1,6 @@
 
 #include <asm-generic/embox.lds.h>
+#include <apps.lds.h>
 
 #ifdef ARCH_TEXT_ALIGNMENT
 # define TEXT_ALIGNMENT    ARCH_TEXT_ALIGNMENT
@@ -17,31 +18,39 @@ PHDRS {
 	text     PT_LOAD  FLAGS(5);  /* R_E */
 	rodata   PT_LOAD  FLAGS(5);  /* R_E */
 	data     PT_LOAD  FLAGS(6);  /* RW_ */
-	bss      PT_NULL  FLAGS(6);  /* RW_ */
+	bss      PT_LOAD  FLAGS(6);  /* RW_ */
+	#include <phdrs.lds.h>
 }
 
 SECTION_SYMBOLS(text)
 SECTION_SYMBOLS(rodata)
 SECTION_SYMBOLS(data)
 SECTION_SYMBOLS(bss)
+#include <section_symbols.lds.h>
 
 SECTIONS {
 	.text : ALIGN(TEXT_ALIGNMENT) {
 
+		LDS_MODULES_TEXT
 		*(.text)
 		*(.text.*)
+		etext   = .;
 
 	} SECTION_REGION(text) :text
 
 	.rodata : ALIGN(DATA_ALIGNMENT) {
 
+		LDS_MODULES_RODATA
 		*(.rodata)
 		*(.rodata.*)
+		*(.srodata)
+		*(.srodata.*)
 		*(.const)
 
 		ALIGNMENT();
 		_ctors_start = .;
 		KEEP(*(.init_array))
+		KEEP(*(.init_array.*))
 		KEEP(*(.ctors))
 		KEEP(*(.ctors.*))
 		_ctors_end   = .;
@@ -49,16 +58,19 @@ SECTIONS {
 		ALIGNMENT();
 		_dtors_start = .;
 		KEEP(*(.fini_array))
+		KEEP(*(.fini_array.*))
 		KEEP(*(.dtors))
 		KEEP(*(.dtors.*))
 		_dtors_end   = .;
 
 		ALIGNMENT();
-		/*_eh_frame_start = .;*/
-		__EH_FRAME_BEGIN__ = .;
+		_eh_frame_begin = .;
+		__eh_frame_start = .;
 		KEEP(*(.eh_frame))
 		KEEP(*(.eh_frame.*))
-		/*KEEP(*(.gcc_except_table))*/
+		KEEP(*(.eh_frame_end))
+		__eh_frame_end = .;
+		KEEP(*(.gcc_except_table*))
 
 		ALIGNMENT();
 		*(.checksum)
@@ -67,18 +79,26 @@ SECTIONS {
 
 	.data : ALIGN(DATA_ALIGNMENT) {
 
+		LDS_MODULES_DATA
+		_app_data_vma = .;
+		LDS_APPS_DATA
 		*(.data)
-		*(.sdata)
 		*(.data.*)
+		*(.sdata)
+		*(.sdata.*)
 		*(.got)
 		*(.got.*)
 
 	} SECTION_REGION(data) :data
+	LDS_MODULES_DATA_LMA
 
 	.bss : ALIGN(DATA_ALIGNMENT) {
 
+		LDS_MODULES_BSS
+		LDS_APPS_BSS
 		*(.bss)
 		*(.sbss)
+		*(.sbss.*)
 		*(.bss.[a-zA-Z0-9_-]*) /* this hell is to exclude '.bss..reserve'. */
 		/* *(.tbss) */
 		/* *(.tbss.*) */
@@ -90,6 +110,8 @@ SECTIONS {
 		*(.bss..reserve)
 		*(.bss..reserve.*)
 
+		LDS_APP_DATA_RESERVE_BSS
+
 		ALIGNMENT();
 		_reserve_end = .;
 	} SECTION_REGION(bss) :bss
@@ -97,12 +119,7 @@ SECTIONS {
 	_bss_len = _bss_end - _bss_vma;
 	_bss_len_with_reserve = SIZEOF(.bss);
 
-#if HAS_SECTION_REGION(heap)
-	.heap : ALIGN(DATA_ALIGNMENT) {
-		*(.heap)
-		*(.heap.*)
-	} SECTION_REGION(heap)
-#endif
+	#include <sections.lds.h>
 
 	/DISCARD/ : {
 		*(.comment)

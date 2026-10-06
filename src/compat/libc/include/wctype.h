@@ -7,8 +7,8 @@
  * @author Alexander Kalmuk
  */
 
-#ifndef WCTYPE_H_
-#define WCTYPE_H_
+#ifndef COMPAT_LIBC_WCTYPE_H_
+#define COMPAT_LIBC_WCTYPE_H_
 
 #include <wchar.h>
 #include <ctype.h>
@@ -30,27 +30,18 @@ WCFUNC(graph);
 WCFUNC(lower);
 WCFUNC(print);
 WCFUNC(punct);
-WCFUNC(space);
+//WCFUNC(space);
 WCFUNC(upper);
 WCFUNC(xdigit);
 
 #undef WCFUNC
 
-static inline wint_t towlower(wint_t wc) {
-	if (wc == WEOF)
-		return WEOF;
-	return (wc < (wint_t)0x100 ? tolower(wc) : wc);
-}
-
-static inline wint_t towupper(wint_t wc) {
-	if (wc == WEOF)
-		return WEOF;
-	return (wc < (wint_t)0x100 ? toupper(wc) : wc);
-}
-
 #include <sys/cdefs.h>
 
 __BEGIN_DECLS
+
+extern wint_t towlower(wint_t wc);
+extern wint_t towupper(wint_t wc);
 
 extern int iswctype(wint_t, wctype_t);
 extern wint_t towctrans(wint_t, wctrans_t);
@@ -58,6 +49,8 @@ extern wint_t towctrans(wint_t, wctrans_t);
 extern wctype_t wctype(const char *property);
 extern wctrans_t wctrans(const char *charclass);
 
+extern int iswspace(wint_t wc);
+
 __END_DECLS
 
-#endif /* WCTYPE_H_ */
+#endif /* COMPAT_LIBC_WCTYPE_H_ */

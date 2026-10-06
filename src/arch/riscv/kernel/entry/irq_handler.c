@@ -1,0 +1,44 @@
+/**
+ * @file
+ *
+ * @brief
+ *
+ * @date 05.12.2019
+ * @author Nastya Nizharadze
+ */
+
+#include <assert.h>
+
+#include <drivers/irqctrl.h>
+#include <kernel/critical.h>
+#include <kernel/irq.h>
+
+void riscv_interrupt_handler(void) {
+	int irq;
+
+	irq = irqctrl_get_intid();
+	if (irq == -1) {
+		return;
+	}
+
+	assert(irq_nr_valid(irq));
+	assert(!critical_inside(CRITICAL_IRQ_LOCK));
+
+	irqctrl_eoi(irq);
+	irqctrl_disable(irq);
+	//irqctrl_eoi(irq);
+	critical_enter(CRITICAL_IRQ_HANDLER);
+	{
+		ipl_enable();
+
+		irq_dispatch(irq);
+		//irqctrl_eoi(irq);
+
+		ipl_disable();
+	}
+	critical_leave(CRITICAL_IRQ_HANDLER);
+
+	irqctrl_enable(irq);
+
+	critical_dispatch_pending();
+}

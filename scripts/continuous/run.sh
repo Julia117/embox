@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # bash is required by declare -A
 # @file
 # @brief
@@ -10,11 +10,11 @@
 # ATML == arch + template, i.e. x86/debug
 ATML="$1"
 SIM_ARG="$2"
-shift 2
-OTHER_ARGS="$@"
+PID_FILE="$3"
 
-TIMEOUT=${CONTINIOUS_RUN_TIMEOUT-45}
+TIMEOUT=${CONTINIOUS_RUN_TIMEOUT:-60}
 
+EMCONF=./conf
 EMKERNEL=./build/base/bin/embox
 OUTPUT_FILE=./cont.out
 
@@ -32,43 +32,70 @@ packetdrill_run() {
 	default_run
 }
 
+x86_smp_run() {
+	TIMEOUT=120
+	default_run
+}
+
 declare -A atml2run
 atml2run=(
-	['arm/qemu']=default_run
-	['x86/qemu']=default_run
-	['x86/smp']=default_run
+	['x86/user_apps']=default_run
 	['x86/test/lang']=default_run
-	['x86/test/fs']="$(dirname $0)/fs/run.sh $ATML"
-	['x86/test/net']="$(dirname $0)/net/run.sh $ATML"
+	['x86/test/units']=default_run
 	['x86/test/packetdrill']=packetdrill_run
-	['sparc/debug']=default_run
-	['mips/debug']=default_run
-	['ppc/debug']=default_run
-	['microblaze/petalogix']=default_run
+	['aarch64/test/units']=default_run
+	['riscv64/test/cxx']=default_run
+	['riscv64/test/units']=default_run
+	['mips/third_party']=default_run
+	['mips64/test/cxx']=default_run
+	['ppc/qemu']=default_run
+	['sparc/qemu']=default_run
+	['microblaze/qemu']=default_run
 	['usermode86/debug']=default_run
+	['project/opencv/arm-qemu']=default_run
+	['project/qt4/arm_qemu_fb_small']=default_run
+	['platform/stm32/f4/stm32f4-discovery']=true
+	['x86/smp']=x86_smp_run
+	['x86/test/fs']="$(dirname "$0")/fs/run.sh $ATML"
+	['x86/test/net']="$(dirname "$0")/net/run.sh $ATML"
+	['x86/test/qt-vnc']="$(dirname "$0")/qt/run.sh $ATML"
 	['generic/qemu']=default_run
-	['generic/qemu_bg']=run_bg_wrapper
+	['generic/qemu_bg']="run_bg_wrapper true"
+	['generic/qemu_bg_no_check']="run_bg_wrapper false"
 	['generic/qemu_bg_kill']=kill_bg_wrapper
+	['generic/save_conf']=save_conf
+	['generic/restore_conf']=restore_conf
 	['generic/fail']=false
 )
 
 sudo_var_pass() {
 	if [ ${!1+defined} ]; then
-		echo $1=${!1}
+		echo "$1=${!1}"
 	else
 		#output is passed to sudo that not likes empty arguments
 		echo __T=
 	fi
 }
 
+run_check() {
+	awk '
+		/^run: success auto poweroff/ || /embox>/ || /[a-z]+@embox/ { s = 1 }
+		/fail/ || /assert/ { f = 1 }
+		END { exit !(f || s) ? 2 : f || !s }
+	' $OUTPUT_FILE
+}
+
 sim_bg=
 run_bg() {
+	rm -f $OUTPUT_FILE
+	touch $OUTPUT_FILE
+
 	declare -A atml2sim
 	#"sparc/qemu" not supported due qemu bug
 	atml2sim=(
-		['x86/smp']="$RUN_QEMU -smp 2"
-		['sparc/debug']="$(dirname $0)/tsim_run.sh $OUTPUT_FILE $SIM_ARG $EMKERNEL"
-		['usermode86/debug']="$(dirname $0)/../usermode_start.sh"
+		['x86/smp']="$RUN_QEMU"
+		['sparc/debug']="$(dirname "$0")/tsim_run.sh $OUTPUT_FILE $SIM_ARG $EMKERNEL"
+		['usermode86/debug']="$(dirname "$0")/../usermode_start.sh"
 	)
 
 	run_cmd=${atml2sim[$ATML]}
@@ -77,7 +104,7 @@ run_bg() {
 	fi
 
 	set +ve
-	sudo PATH=$PATH \
+	sudo PATH="$PATH" \
 		AUTOQEMU_KVM_ARG="$AUTOQEMU_KVM_ARG" \
 		AUTOQEMU_NOGRAPHIC_ARG="$AUTOQEMU_NOGRAPHIC_ARG" \
 		"$(sudo_var_pass AUTOQEMU_NICS)" \
@@ -86,51 +113,41 @@ run_bg() {
 		USERMODE_START_OUTPUT="$USERMODE_START_OUTPUT" \
 		$run_cmd &
 	sim_bg=$!
-}
 
-run_check() {
-
-	sudo chmod 666 $OUTPUT_FILE
-
-	cat $OUTPUT_FILE
-
-	ret=1
-	for success_pattern in '^run: success auto poweroff' 'embox>' '[a-z]\+@embox'; do
-		if grep "$success_pattern" $OUTPUT_FILE &>/dev/null ; then
-			ret=0
-		fi
-	done
-	for fail_pattern in "fail" "assert"; do
-		if grep "$fail_pattern" $OUTPUT_FILE &>/dev/null ; then
-			ret=1
-		fi
-	done
-
-	return $ret
+	export OUTPUT_FILE
+	export -f run_check
+	timeout "$TIMEOUT" bash -c '
+			while run_check; [ $? == 2 ]; do
+				sleep 1
+			done' && \
+		sleep 5 # let things to settle down
 }
 
 kill_bg() {
-	pstree -A -p $sim_bg | sed 's/[0-9a-z{}_\.+`-]*(\([0-9]\+\))/\1 /g' | xargs sudo kill
-}
+	# Sometimes $sim_bg is empty string, so we should make sure pstree is
+	# called with acual PID (otherwise it will print every process running)
+	if test -z "$sim_bg"
+	then
+		echo "warning: No background process running"
+	else
+	        # This quite a cryptic line actually does the following:
+	        #   1. It draws a subtree of processes rooted at a process with a PID contained in $sim_bg
+	        #   2. Then it cleans resulting lines from everything except processes' PIDs
+	        #   3. Finally it kills processes having PIDs it has found
+	        # In other words this line kills a process and all its descendents.
+		pstree -A -p $sim_bg | sed 's/[0-9a-z{}_\.+`-]*(\([0-9]\+\))/\1 /g' | xargs sudo kill
+	fi
 
-## FIXME not working
-#wait_bg() {
-#	timeout -s 9 $TIMEOUT wait $sim_bg #wait is builtin, so can't be used as timeout arg
-#	if [ 124 -eq $? ]; then
-#		kill_bg
-#	fi
-#}
+	cat $OUTPUT_FILE
 
-wait_bg() {
-	sleep $TIMEOUT
-	kill_bg
+	restore_conf
 }
 
 default_run() {
 
 	run_bg
 
-	wait_bg
+	kill_bg
 
 	run_check
 	ret=$?
@@ -141,29 +158,52 @@ default_run() {
 }
 
 run_bg_wrapper() {
+	check_if_started=$1
 
 	run_bg
 
-	sleep $TIMEOUT
+	ret=0
+	if [ "$check_if_started" = true ]; then
+		run_check
+		ret=$?
+	fi
 
-	run_check
-	ret=$?
+	echo "====================="
+	echo "Embox output on start"
+	echo "====================="
+	cat $OUTPUT_FILE
 
 	if [ 0 -ne $ret ]; then
 		kill_bg
 		exit $ret
 	fi
 
-	echo $sim_bg > $OTHER_ARGS
+	echo $sim_bg > "$PID_FILE"
 	return 0
 }
 
 kill_bg_wrapper() {
-	sim_bg=$(cat $OTHER_ARGS)
+	sim_bg=$(cat "$PID_FILE")
+	echo "==================="
+	echo "Embox output on end"
+	echo "==================="
 	kill_bg
 }
 
-if ! echo ${!atml2run[@]} | grep $ATML &>/dev/null; then
+save_conf() {
+	echo "Save conf/ to $EMCONF.orig"
+	rm -rf $EMCONF.orig
+	cp -r $EMCONF $EMCONF.orig
+}
+
+restore_conf() {
+	if [ -d $EMCONF.orig ]; then
+		echo "Restore conf/ from $EMCONF.orig"
+		cp -rf $EMCONF.orig/* $EMCONF
+	fi
+}
+
+if ! [ -v "atml2run[$ATML]" ]; then
 	echo Warning: template testing not supported >&2
 	exit 0
 fi

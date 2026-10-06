@@ -4,17 +4,19 @@
  * @date Nov 7, 2013
  * @author: Anton Bondarev
  */
+#include <util/log.h>
+
 #include <errno.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include <hal/ipl.h>
 #include <mem/misc/pool.h>
 #include <net/sock.h>
-#include <fs/flags.h>
 
-#include <framework/net/family/api.h>
-#include <framework/net/sock/api.h>
-#include <framework/net/pack/api.h>
+#include <net/family.h>
+#include <net/net_sock.h>
 
 #include <util/err.h>
 #include <security/security.h>
@@ -34,16 +36,21 @@ static struct sock * sock_alloc(
 		sk = pool_alloc(f_ops->sock_pool);
 		if (sk == NULL) {
 			ipl_restore(sp);
+			log_error("could not alloc sock_family");
 			return NULL;
 		}
+
+		memset(sk, 0, sizeof(struct sock));
 
 		if (p_ops->sock_pool != NULL) {
 			p_sk = pool_alloc(p_ops->sock_pool);
 			if (p_sk == NULL) {
 				pool_free(f_ops->sock_pool, sk);
 				ipl_restore(sp);
+				log_error("could not alloc sock_proto");
 				return NULL;
 			}
+			memset(p_sk, 0, sizeof(struct proto_sock));
 		}
 		else {
 			p_sk = NULL;
@@ -129,7 +136,7 @@ static void sock_init(struct sock *sk, int family, int type,
 	sk->addr_len = 0;
 	sk->err = 0;
 
-	idesc_init(&sk->idesc, &task_idx_ops_socket, FS_MAY_READ | FS_MAY_WRITE);
+	idesc_init(&sk->idesc, &task_idx_ops_socket, O_RDWR);
 	sock_xattr_init(sk);
 	security_sock_create(sk);
 }
@@ -144,22 +151,23 @@ struct sock *sock_create(int family, int type, int protocol) {
 
 	nfamily = net_family_lookup(family);
 	if (nfamily == NULL) {
-		return err_ptr(EAFNOSUPPORT);
+		return err2ptr(EAFNOSUPPORT);
 	}
 
 	nftype = net_family_type_lookup(nfamily, type);
 	if (nftype == NULL) {
-		return err_ptr(EPROTOTYPE);
+		return err2ptr(EPROTOTYPE);
 	}
 
 	nsock = net_sock_lookup(family, type, protocol);
 	if (nsock == NULL) {
-		return err_ptr(EPROTONOSUPPORT);
+		return err2ptr(EPROTONOSUPPORT);
 	}
 
 	new_sk = sock_alloc(nftype->ops, nsock->ops);
 	if (new_sk == NULL) {
-		return err_ptr(ENOMEM);
+		log_info("could not alloc type %d prot %d", nftype->type, nsock->protocol);
+		return err2ptr(ENOMEM);
 	}
 
 	sock_init(new_sk, family, type, nsock->protocol,
@@ -170,7 +178,7 @@ struct sock *sock_create(int family, int type, int protocol) {
 	ret = new_sk->f_ops->init(new_sk);
 	if (ret != 0) {
 		sock_release(new_sk);
-		return err_ptr(-ret);
+		return err2ptr(-ret);
 	}
 
 	assert(new_sk->p_ops != NULL);
@@ -178,7 +186,7 @@ struct sock *sock_create(int family, int type, int protocol) {
 		ret = new_sk->p_ops->init(new_sk);
 		if (ret != 0) {
 			sock_close(new_sk);
-			return err_ptr(-ret);
+			return err2ptr(-ret);
 		}
 	}
 

@@ -11,7 +11,7 @@
 #include <string.h>
 
 #include <util/math.h>
-#include <util/array.h>
+#include <lib/libds/array.h>
 
 CMDLINE * cmdline_init(CMDLINE *this) {
 	CMDLINE_HISTORY *history;
@@ -21,7 +21,9 @@ CMDLINE * cmdline_init(CMDLINE *this) {
 
 	history = this->history;
 	history->array[0][0] = '\0';
+#if CMDLINE_HISTORY_SIZE > 1
 	history->array[1][0] = '\0';
+#endif
 	history->index = 0;
 	this->string[0] = '\0';
 	this->length = 0;

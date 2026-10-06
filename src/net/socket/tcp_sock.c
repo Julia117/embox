@@ -5,7 +5,7 @@
  * @date 18.06.12
  * @author Ilia Vaprol
  */
-
+#include <util/log.h>
 #include <errno.h>
 #include <assert.h>
 #include <string.h>
@@ -13,7 +13,6 @@
 #include <sys/time.h>
 
 #include <util/math.h>
-
 
 #include <net/l4/tcp.h>
 #include <net/lib/tcp.h>
@@ -27,34 +26,41 @@
 #include <mem/misc/pool.h>
 #include <netinet/in.h>
 
-#include <embox/net/sock.h>
+#include <net/net_sock.h>
 
 #include <kernel/sched/sched_lock.h>
-#include <fs/idesc_event.h>
+#include <kernel/task/resource/idesc_event.h>
 #include <net/sock_wait.h>
 
 #include <util/err.h>
 
 #include <framework/mod/options.h>
-#define MODOPS_AMOUNT_TCP_SOCK OPTION_GET(NUMBER, amount_tcp_sock)
+
+#define MODOPS_AMOUNT_TCP_SOCK    OPTION_GET(NUMBER, amount_tcp_sock)
+#define MAX_SIMULTANEOUS_TX_PACK  OPTION_GET(NUMBER, max_simultaneous_tx_pack)
 
 #include <config/embox/net/socket.h>
 #define MODOPS_CONNECT_TIMEOUT \
 	OPTION_MODULE_GET(embox__net__socket, NUMBER, connect_timeout)
 
-#define MAX_SIMULTANEOUS_TX_PACK OPTION_GET(NUMBER, max_simultaneous_tx_pack)
+
 static const struct sock_proto_ops tcp_sock_ops_struct;
-const struct sock_proto_ops *const tcp_sock_ops
-		= &tcp_sock_ops_struct;
 
-EMBOX_NET_SOCK(AF_INET, SOCK_STREAM, IPPROTO_TCP, 1,
-		tcp_sock_ops_struct);
-EMBOX_NET_SOCK(AF_INET6, SOCK_STREAM, IPPROTO_TCP, 1,
-		tcp_sock_ops_struct);
+const struct sock_proto_ops *const tcp_sock_ops = &tcp_sock_ops_struct;
 
+EMBOX_NET_SOCK(AF_INET, SOCK_STREAM, IPPROTO_TCP, 1, tcp_sock_ops_struct);
+EMBOX_NET_SOCK(AF_INET6, SOCK_STREAM, IPPROTO_TCP, 1, tcp_sock_ops_struct);
+
+#if OPTION_GET(NUMBER, def_tcp_win_val) == 0
+#define TCP_WINDOW_VALUE_DEFAULT  16384 /* Default size of widnow */
+#else
+#define TCP_WINDOW_VALUE_DEFAULT    (OPTION_GET(NUMBER, def_tcp_win_val))
+#endif
+#define TCP_WINDOW_FACTOR_DEFAULT     7 /* Default factor of widnow */
+
+#define MAX_TCP_OPT_SIZE        128  /* 128 is max size of tcp options length */
 #define MAX_HEADER_SIZE    (IP_MIN_HEADER_SIZE + IP_MAX_OPTLEN + \
-		TCP_MIN_HEADER_SIZE + ETH_HEADER_SIZE + 128 /* 128 is max size of tcp options length */)
-
+		TCP_MIN_HEADER_SIZE + ETH_HEADER_SIZE + MAX_TCP_OPT_SIZE)
 
 /************************ Socket's functions ***************************/
 static int tcp_init(struct sock *sk) {
@@ -68,20 +74,19 @@ static int tcp_init(struct sock *sk) {
 	tcp_sk = to_tcp_sock(sk);
 	assert(tcp_sk != NULL);
 
-	debug_print(3, "tcp_init: sk %p\n", to_sock(tcp_sk));
+	log_debug("sk %p", to_sock(tcp_sk));
 
-	tcp_sk->p_sk = tcp_sk->p_sk; /* already initialized */
 	tcp_sk->state = TCP_CLOSED;
 	tcp_sk->self.seq = tcp_sk->last_ack;
-	memcpy(&tcp_sk->self.wind, &self_wind_default,
-			sizeof tcp_sk->self.wind);
+	memcpy(&tcp_sk->self.wind, &self_wind_default, sizeof(tcp_sk->self.wind));
 	tcp_sk->rem.wind.factor = 0;
 	tcp_sk->parent = NULL;
 	INIT_LIST_HEAD(&tcp_sk->conn_lnk);
 	/* INIT_LIST_HEAD(&tcp_sk->conn_ready); */
-	INIT_LIST_HEAD(&tcp_sk->conn_wait);
-	INIT_LIST_HEAD(&tcp_sk->conn_free);
-	tcp_sk->free_wait_queue_len = tcp_sk->free_wait_queue_max = 0;
+    tcp_sk->listening.is_listening = 0;
+    tcp_sk->accepted = 0;
+	INIT_LIST_HEAD(&tcp_sk->listening.conn_wait);
+	INIT_LIST_HEAD(&tcp_sk->listening.conn_free);
 	tcp_sk->lock = 0;
 	/* timerclear(&sock.tcp_sk->syn_time); */
 	timerclear(&tcp_sk->ack_time);
@@ -92,7 +97,46 @@ static int tcp_init(struct sock *sk) {
 	return 0;
 }
 
+/* Form and send reset packet to interrupt connection */
+int send_rst_from_socket(struct tcp_sock *tcp_sk){
+    struct sk_buff *skb;
+    in_port_t dst_port;
+    in_port_t src_port;
+    struct tcphdr *tcph;
+
+    skb = NULL; /* alloc new pkg */
+    int ret = alloc_prep_skb(tcp_sk, 0, NULL, &skb);
+    if (ret) {
+        return ret; /* error: see ret */
+    }
+
+    tcph = tcp_hdr(skb);
+    dst_port = sock_inet_get_dst_port(to_sock(tcp_sk));
+    src_port = sock_inet_get_src_port(to_sock(tcp_sk));
+    tcp_build(tcph, dst_port, src_port, TCP_MIN_HEADER_SIZE,
+            tcp_sk->self.wind.value);
+    tcph->rst = 1;
+    tcp_sk->rem.seq++;
+    tcp_set_ack_field(tcph, tcp_sk->rem.seq);
+    send_seq_from_sock(tcp_sk, skb);
+    skb_free(skb);
+
+    return 0;
+}
+
+/* Reset established connections that weren't accepted on listening socket*/
+static void reset_unaccepted_ready(struct tcp_sock *parent){
+    struct tcp_sock *sock_tcp;
+
+    list_for_each_entry(sock_tcp, &parent->conn_ready, conn_lnk) {
+        send_rst_from_socket(sock_tcp);
+        tcp_sock_set_state(sock_tcp, TCP_CLOSED);
+    }
+    return;
+}
+
 static int tcp_close(struct sock *sk) {
+	int ret;
 	struct sk_buff *skb;
 	struct tcphdr *tcph;
 	struct tcp_sock *tcp_sk;
@@ -100,49 +144,61 @@ static int tcp_close(struct sock *sk) {
 	tcp_sk = to_tcp_sock(sk);
 	assert(tcp_sk != NULL);
 
-	debug_print(3, "tcp_close: sk %p\n", to_sock(tcp_sk));
+	log_debug("sk %p", to_sock(tcp_sk));
 
 	tcp_sock_lock(tcp_sk, TCP_SYNC_STATE);
 	{
 		assert(tcp_sk->state < TCP_MAX_STATE);
 		switch (tcp_sk->state) {
 		default:
-			return -EBADF;
+			ret = -EBADF;
+			break;
 		case TCP_CLOSED:
-			tcp_sock_unlock(tcp_sk, TCP_SYNC_STATE);
 			tcp_sock_release(tcp_sk);
-			return 0;
+			ret = 0;
+			break;
 		case TCP_LISTEN:
+            reset_unaccepted_ready(tcp_sk);
 		case TCP_SYN_SENT:
 		case TCP_SYN_RECV_PRE:
 			tcp_sock_set_state(tcp_sk, TCP_CLOSED);
-			tcp_sock_unlock(tcp_sk, TCP_SYNC_STATE);
 			tcp_sock_release(tcp_sk);
-			return 0;
+			ret = 0;
+			break;
 		case TCP_SYN_RECV:
 		case TCP_ESTABIL:
 		case TCP_CLOSEWAIT:
+		{
+			enum tcp_sock_state new_state;
+			in_port_t dst_port;
+			in_port_t src_port;
+
 			skb = NULL; /* alloc new pkg */
-			if (0 != alloc_prep_skb(tcp_sk, 0, NULL, &skb)) {
+			ret = alloc_prep_skb(tcp_sk, 0, NULL, &skb);
+			if (ret) {
 				break; /* error: see ret */
 			}
-			tcp_sock_set_state(tcp_sk,
-					tcp_sk->state == TCP_CLOSEWAIT ? TCP_LASTACK
-						: TCP_FINWAIT_1);
+			new_state = (tcp_sk->state == TCP_CLOSEWAIT) ? TCP_LASTACK :
+					TCP_FINWAIT_1;
+			tcp_sock_set_state(tcp_sk, new_state);
+
 			tcph = tcp_hdr(skb);
-			tcp_build(tcph,
-					sock_inet_get_dst_port(to_sock(tcp_sk)),
-					sock_inet_get_src_port(to_sock(tcp_sk)),
-					TCP_MIN_HEADER_SIZE, tcp_sk->self.wind.value);
+			dst_port = sock_inet_get_dst_port(to_sock(tcp_sk));
+			src_port = sock_inet_get_src_port(to_sock(tcp_sk));
+			tcp_build(tcph, dst_port, src_port, TCP_MIN_HEADER_SIZE,
+					tcp_sk->self.wind.value);
 			tcph->fin = 1;
 			tcp_set_ack_field(tcph, tcp_sk->rem.seq);
 			send_seq_from_sock(tcp_sk, skb);
+
+			ret = 0;
 			break;
+		} /* TCP_CLOSEWAIT */
 		}
 	}
 	tcp_sock_unlock(tcp_sk, TCP_SYNC_STATE);
 
-	return 0;
+	return ret;
 }
 
 static int tcp_connect(struct sock *sk,
@@ -152,12 +208,12 @@ static int tcp_connect(struct sock *sk,
 	struct tcphdr *tcph;
 	struct tcp_sock *tcp_sk;
 	int ret;
-	static const __u8 magic_opts[] = {
-		TCP_OPT_KIND_MSS, 0x04,     /* Maximum segment size:             */
-				0x40, 0x0C,               /* 16396 bytes         */
-		TCP_OPT_KIND_NOP,           /* No-Operation                      */
-		TCP_OPT_KIND_WS, 0x03,      /* Window scale:                     */
-				TCP_WINDOW_FACTOR_DEFAULT /* 7 (multiply by 128) */
+	static const uint8_t magic_opts[] = {
+		TCP_OPT_KIND_MSS, 0x04,     /* Maximum segment size: */
+		0x40, 0x0C,                 /* 16396 bytes           */
+		TCP_OPT_KIND_NOP,           /* No-Operation          */
+		TCP_OPT_KIND_WS, 0x03,      /* Window scale:         */
+		TCP_WINDOW_FACTOR_DEFAULT   /* 7 (multiply by 128)   */
 	};
 
 	(void)addr;
@@ -167,7 +223,7 @@ static int tcp_connect(struct sock *sk,
 	tcp_sk = to_tcp_sock(sk);
 	assert(tcp_sk != NULL);
 
-	debug_print(3, "tcp_connect: sk %p\n", to_sock(tcp_sk));
+	log_debug("sk %p", to_sock(tcp_sk));
 
 	tcp_sock_lock(tcp_sk, TCP_SYNC_STATE);
 	{
@@ -177,6 +233,10 @@ static int tcp_connect(struct sock *sk,
 			ret = -EISCONN;
 			break;
 		case TCP_CLOSED:
+		{
+			in_port_t dst_port;
+			in_port_t src_port;
+
 			/* make skb with options */
 			skb = NULL; /* alloc new pkg */
 			ret = alloc_prep_skb(tcp_sk, sizeof magic_opts, NULL, &skb);
@@ -185,14 +245,15 @@ static int tcp_connect(struct sock *sk,
 			}
 			tcp_sock_set_state(tcp_sk, TCP_SYN_SENT);
 			tcph = tcp_hdr(skb);
-			tcp_build(tcph,
-					sock_inet_get_dst_port(to_sock(tcp_sk)),
-					sock_inet_get_src_port(to_sock(tcp_sk)),
-					TCP_MIN_HEADER_SIZE + sizeof magic_opts,
+			dst_port = sock_inet_get_dst_port(to_sock(tcp_sk));
+			src_port = sock_inet_get_src_port(to_sock(tcp_sk));
+			tcp_build(tcph, dst_port, src_port,
+					TCP_MIN_HEADER_SIZE + sizeof(magic_opts),
 					tcp_sk->self.wind.value);
 			tcph->syn = 1;
 			memcpy(&tcph->options, &magic_opts[0], sizeof magic_opts);
 			send_seq_from_sock(tcp_sk, skb);
+
 			//FIXME hack use common lock/unlock systems for socket
 			sched_lock();
 			{
@@ -205,6 +266,7 @@ static int tcp_connect(struct sock *sk,
 				ret = -EINPROGRESS;
 				break;
 			}
+
 			if (tcp_sock_get_status(tcp_sk) == TCP_ST_NOTEXIST) {
 				ret = -ECONNRESET;
 				break;
@@ -214,6 +276,7 @@ static int tcp_connect(struct sock *sk,
 			}
 
 			break;
+		} /*TCP_CLOSED */
 		}
 	}
 	tcp_sock_unlock(tcp_sk, TCP_SYNC_STATE);
@@ -221,40 +284,50 @@ static int tcp_connect(struct sock *sk,
 	return ret;
 }
 
-static int tcp_sock_alloc_missing_backlog(struct tcp_sock *tcp_sk) {
-	int to_alloc;
+/* tcp_sock_listen_fetch() returns the next free allocated socket for
+ * the new connection 
+ * is called from tcp layer, from tcp_st_listen()*/
+struct tcp_sock *tcp_sock_listen_fetch(struct tcp_sock *tcp_sk) {
+    assert(tcp_sk->listening.wait_queue_len > 0);
 
+    tcp_sk->listening.wait_queue_len--;
+    struct tcp_sock *tcp_newsk = mcast_out(tcp_sk->listening.conn_free.next,
+            struct tcp_sock, conn_lnk);
+    list_del_init(&tcp_newsk->conn_lnk);
+
+    return tcp_newsk;
+}
+
+/* tcp_sock_listen_alloc() allocate a new socket for accepting a new connection*/
+int tcp_sock_listen_alloc(struct tcp_sock *tcp_sk) {
 	assert(tcp_sk != NULL);
+    struct tcp_listen_info *listen = &tcp_sk->listening;
+
+    if (listen->wait_queue_len == listen->backlog) {
+        return 0;
+    }
 
 	tcp_sock_lock(tcp_sk, TCP_SYNC_CONN_QUEUE);
-	{
-		to_alloc = tcp_sk->free_wait_queue_max - tcp_sk->free_wait_queue_len;
-		/* to_alloc allowed to be negative. It could be if backlog had set and then
-		 * was reduced.
-		 */
+	do{
+        struct sock *newsk;
+        struct tcp_sock *tcp_newsk;
 
-		while (to_alloc > 0) {
-			struct sock *newsk;
-			struct tcp_sock *tcp_newsk;
+        newsk = sock_create(to_sock(tcp_sk)->opt.so_domain,
+                SOCK_STREAM, IPPROTO_TCP);
+        if (ptr2err(newsk) != 0) {
+            log_info("could not sock_create() ptr2err(%d)", ptr2err(newsk));
+            break;
+        }
 
-			newsk = sock_create(to_sock(tcp_sk)->opt.so_domain,
-					SOCK_STREAM, IPPROTO_TCP);
-			if (err(newsk) != 0) {
-				break;
-			}
+        tcp_newsk = to_tcp_sock(newsk);
+        tcp_newsk->parent = tcp_sk;
 
-			to_alloc--;
-
-			tcp_newsk = to_tcp_sock(newsk);
-			tcp_newsk->parent = tcp_sk;
-
-			list_add_tail(&tcp_newsk->conn_lnk, &tcp_sk->conn_free);
-			tcp_sk->free_wait_queue_len++;
-		}
-	}
+        list_add_tail(&tcp_newsk->conn_lnk, &tcp_sk->listening.conn_free);
+        listen->wait_queue_len++; /* one more socket in queue ready for accept*/
+	}while(0);
 	tcp_sock_unlock(tcp_sk, TCP_SYNC_CONN_QUEUE);
 
-	return tcp_sk->free_wait_queue_len;
+	return listen->wait_queue_len;
 }
 
 static int tcp_listen(struct sock *sk, int backlog) {
@@ -264,7 +337,7 @@ static int tcp_listen(struct sock *sk, int backlog) {
 	tcp_sk = to_tcp_sock(sk);
 	assert(tcp_sk != NULL);
 
-	debug_print(3, "tcp_listen: sk %p\n", to_sock(tcp_sk));
+	log_debug("sk %p", to_sock(tcp_sk));
 
 	tcp_sock_lock(tcp_sk, TCP_SYNC_STATE);
 	{
@@ -279,9 +352,10 @@ static int tcp_listen(struct sock *sk, int backlog) {
 				ret = -EINVAL; /* error: invalid backlog */
 				break;
 			}
-			tcp_sk->free_wait_queue_max = backlog;
-			/* this could be not first listen call, adjusting backlog queue */
-			tcp_sock_alloc_missing_backlog(tcp_sk);
+            tcp_sk->listening.is_listening = 1;
+            tcp_sk->listening.backlog = backlog;
+            tcp_sk->listening.wait_queue_len = 0;
+            /*tcp_sock_listen_alloc(tcp_sk);*/
 			tcp_sock_set_state(tcp_sk, TCP_LISTEN);
 			ret = 0;
 			break;
@@ -310,8 +384,7 @@ static inline struct tcp_sock *accept_get_connection(struct tcp_sock *tcp_sk) {
 
 	/* delete new socket from list */
 	list_del_init(&tcp_newsk->conn_lnk);
-	assert(tcp_sk->free_wait_queue_len > 0);
-	--tcp_sk->free_wait_queue_len;
+    tcp_newsk->accepted = 1;
 
 	return tcp_newsk;
 }
@@ -329,17 +402,18 @@ static int tcp_accept(struct sock *sk, struct sockaddr *addr,
 	assert(newsk != NULL);
 
 	tcp_sk = to_tcp_sock(sk);
-	debug_print(3, "tcp_accept: sk %p, st%d\n",
-			to_sock(tcp_sk), tcp_sk->state);
+	log_debug("sk %p, st%d", to_sock(tcp_sk), tcp_sk->state);
 
 	assert(tcp_sk->state < TCP_MAX_STATE);
 	if (tcp_sk->state != TCP_LISTEN) {
 		return -EINVAL; /* error: the socket is not accepting connections */
 	}
 
-	if (0 == tcp_sock_alloc_missing_backlog(tcp_sk)) {
+    /* Previously here, if no sockets for a queue could be allocated
+     * we returned -ENOBUFS, which doesn't seem reasonable */
+	/*if (0 == tcp_sock_alloc_missing_backlog(tcp_sk)) {
 		return -ENOBUFS;
-	}
+	}*/
 
 	/* waiting anyone */
 	tcp_newsk = NULL;
@@ -350,7 +424,6 @@ static int tcp_accept(struct sock *sk, struct sockaddr *addr,
 			if (tcp_newsk) {
 				break;
 			}
-			tcp_sock_alloc_missing_backlog(tcp_sk);
 			ret = sock_wait(sk, POLLIN | POLLERR, SCHED_TIMEOUT_INFINITE);
 		} while (!ret);
 	}
@@ -376,39 +449,71 @@ static int tcp_accept(struct sock *sk, struct sockaddr *addr,
 	return 0;
 }
 
-static int tcp_write(struct tcp_sock *tcp_sk, void *buff, size_t len) {
+static int tcp_write(struct tcp_sock *tcp_sk, struct msghdr * msg) {
+	size_t iov_len;
+	int full_len;
 	void *pb;
 	struct sk_buff *skb;
 	int ret;
+	size_t skb_len;
+	int tran_len;
+	int cp_len;
+	int cp_off = 0;
+	int i;
 
-	pb = buff;
-	while (len != 0) {
-		/* Previous comment: try to send wholly msg
-		 * We must pass no more than 64k bytes to underlaying IP level */
-		size_t bytes = min(len, IP_MAX_PACKET_LEN - MAX_HEADER_SIZE);
-		skb = NULL; /* alloc new pkg */
+	full_len = 0;
+	tran_len = 0;
+	for (i = 0; i < msg->msg_iovlen; i ++) {
+		full_len += msg->msg_iov[i].iov_len;
+	}
 
-		ret = alloc_prep_skb(tcp_sk, 0, &bytes, &skb);
-		if (ret != 0) {
-			break;
+	iov_len = 0;
+	skb_len = 0;
+
+	for (i = 0; tran_len < full_len; ) {
+		if (0 == iov_len) {
+			pb = msg->msg_iov[i].iov_base;
+			iov_len = msg->msg_iov[i].iov_len;
+			i++;
 		}
 
-		debug_print(3, "tcp_sendmsg: sending len %d\n", bytes);
+		if (0 == skb_len) {
+			in_port_t src_port, dst_port;
 
-		tcp_build(skb->h.th,
-				sock_inet_get_dst_port(to_sock(tcp_sk)),
-				sock_inet_get_src_port(to_sock(tcp_sk)),
-				TCP_MIN_HEADER_SIZE, tcp_sk->self.wind.value);
+			cp_off = 0;
+			skb_len = min((full_len - tran_len), (IP_MAX_PACKET_LEN - MAX_HEADER_SIZE));
+			skb = NULL; /* alloc new pkg */
 
-		memcpy(skb->h.th + 1, pb, bytes);
-		pb += bytes;
-		len -= bytes;
-		/* Fill TCP header */
-		skb->h.th->psh = (len == 0);
-		tcp_set_ack_field(skb->h.th, tcp_sk->rem.seq);
-		send_seq_from_sock(tcp_sk, skb);
+			ret = alloc_prep_skb(tcp_sk, 0, &skb_len, &skb);
+			if (ret != 0) {
+				break;
+			}
+
+			dst_port = sock_inet_get_dst_port(to_sock(tcp_sk));
+			src_port = sock_inet_get_src_port(to_sock(tcp_sk));
+			tcp_build(skb->h.th, dst_port, src_port, TCP_MIN_HEADER_SIZE,
+					tcp_sk->self.wind.value);
+		}
+
+		cp_len = min(iov_len, skb_len);
+
+		memcpy(((void *)(skb->h.th + 1) + cp_off), pb, cp_len);
+		iov_len -= cp_len;
+		pb += cp_len;
+		skb_len -= cp_len;
+		tran_len += cp_len;
+		cp_off += cp_len;
+
+		if (0 == skb_len) {
+			/* Fill TCP header */
+			skb->h.th->psh = (iov_len == 0);
+			tcp_set_ack_field(skb->h.th, tcp_sk->rem.seq);
+			send_seq_from_sock(tcp_sk, skb);
+			cp_off = 0;
+		}
 	}
-	return pb - buff;
+
+	return tran_len;
 }
 
 #if MAX_SIMULTANEOUS_TX_PACK > 0
@@ -451,7 +556,7 @@ static int tcp_sendmsg(struct sock *sk, struct msghdr *msg, int flags) {
 	}
 
 	tcp_sk = to_tcp_sock(sk);
-	debug_print(3, "tcp_sendmsg: sk %p\n", to_sock(tcp_sk));
+	log_debug("sk %p", to_sock(tcp_sk));
 
 sendmsg_again:
 	assert(tcp_sk->state < TCP_MAX_STATE);
@@ -485,7 +590,7 @@ sendmsg_again:
 		}
 		sched_unlock();
 
-		len = tcp_write(tcp_sk, msg->msg_iov->iov_base, msg->msg_iov->iov_len);
+		len = tcp_write(tcp_sk, msg);
 		ret = tcp_wait_tx_ready(sk, timeout);
 		if (0 > ret) {
 			return ret;
@@ -509,7 +614,7 @@ static int tcp_recvmsg(struct sock *sk, struct msghdr *msg,
 
 	tcp_sk = to_tcp_sock(sk);
 
-	debug_print(3, "tcp_recvmsg: sk %p\n", to_sock(tcp_sk));
+	log_debug("sk %p", to_sock(tcp_sk));
 
 	assert(tcp_sk->state < TCP_MAX_STATE);
 	switch (tcp_sk->state) {
@@ -544,6 +649,30 @@ static int tcp_shutdown(struct sock *sk, int how) {
 	return 0;
 }
 
+static int tcp_getsockopt(struct sock *sk, int level, int optname,
+        	void *optval, socklen_t *optlen) {
+	int val;	
+
+	switch (optname) {
+	case TCP_NODELAY:
+		val = 0;
+		break;
+	case TCP_MAXSEG:
+		val = 1460;
+		break;
+	default:
+		return -ENOPROTOOPT;
+	}
+
+	if (*optlen < sizeof(val)) {
+		return -EINVAL;
+	}
+	memcpy(optval, &val, sizeof(val));
+	*optlen = sizeof(val);
+
+	return 0;
+}
+
 static int tcp_setsockopt(struct sock *sk, int level, int optname,
 			const void *optval, socklen_t optlen) {
 
@@ -569,6 +698,7 @@ static const struct sock_proto_ops tcp_sock_ops_struct = {
 	.accept     = tcp_accept,
 	.sendmsg    = tcp_sendmsg,
 	.recvmsg    = tcp_recvmsg,
+	.getsockopt = tcp_getsockopt,
 	.setsockopt = tcp_setsockopt,
 	.shutdown   = tcp_shutdown,
 	.sock_pool  = &tcp_sock_pool,

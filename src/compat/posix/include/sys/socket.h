@@ -54,6 +54,39 @@ struct linger {
 	int         l_linger;         /* linger time, in seconds */
 };
 
+#define SCM_RIGHTS     0x1
+
+#define __CMSG_ALIGN(len) \
+	(((len) + sizeof(long) - 1) & ~(sizeof(long) - 1))
+
+#define CMSG_FIRSTHDR(mhdr) \
+	((mhdr)->msg_controllen >= sizeof(struct cmsghdr) ? \
+		(struct cmsghdr *) (mhdr)->msg_control : \
+		(struct cmsghdr *) NULL)
+
+#define CMSG_NXTHDR(mhdr, cmsg) \
+	(((cmsg) == NULL) \
+	    ? CMSG_FIRSTHDR(mhdr) \
+	    : (((char *) (cmsg) + __CMSG_ALIGN((cmsg)->cmsg_len) \
+	            + sizeof(struct cmsghdr) \
+	            > (char *) ((mhdr)->msg_control) + (mhdr)->msg_controllen) \
+	        ? (struct cmsghdr *) NULL \
+	        : (struct cmsghdr *) ((char *) (cmsg) + __CMSG_ALIGN((cmsg)->cmsg_len))))
+
+#define CMSG_DATA(cmsg) \
+	((void *)((char *)(cmsg) + sizeof(struct cmsghdr)))
+
+/*
+ * CMSG_SPACE and CMSG_LEN are not POSIX, but they are part of rfc2292:
+ *   https://tools.ietf.org/html/rfc2292#section-4.3
+ * Since they are not Linux-specific macros and often are used alongside
+ * with another CMSG_ macros we also support them.
+ */
+#define CMSG_SPACE(len) \
+	(sizeof(struct cmsghdr) + __CMSG_ALIGN(len))
+
+#define CMSG_LEN(len) \
+	(sizeof(struct cmsghdr) + (len))
 
 /**
  * Supported protocol/address families
@@ -73,6 +106,12 @@ enum {
 #define AF_INET6  PF_INET6
 	PF_PACKET = 17, /* packet family */
 #define AF_PACKET PF_PACKET
+	PF_NETLINK = 18,
+#define AF_NETLINK PF_NETLINK
+	PF_RDS     =  19,   /* Reliable Datagram Sockets (RDS) protocol */
+#define AF_RDS     PF_RDS
+	PF_CAN     =  29,   /* Controller Area Network. */
+#define AF_CAN     PF_CAN
 	PF_MAX          /* upper bound of protocol family */
 #define AF_MAX    PF_MAX
 };
@@ -101,6 +140,7 @@ enum {
 	SOCK_RAW       =  3, /* raw protocol socket */
 	SOCK_SEQPACKET =  5, /* sequential packet socket */
 	SOCK_PACKET    = 10, /* packet socket */
+	SOCK_RDM       = 20, /* a reliable datagram layer */
 	SOCK_TYPE_MAX        /* i.e. SOCK_PACKET + 1 */
 };
 
@@ -164,6 +204,11 @@ SO_TYPE    Socket type.
 #define SO_POSIX_MAX    19
 /* }; */
 
+/* For compatibility with Linux */
+#define SO_SNDBUFFORCE 32
+#define SO_RCVBUFFORCE 33
+#define SO_TIMESTAMP   34
+#define SO_RXQ_OVFL    35
 
 /* POSIX descriptions
 MSG_CTRUNC    Control data truncated.
@@ -206,7 +251,7 @@ MSG_WAITALL    Wait for complete message.
 //#define SOL_ICMP    1   /* No-no-no! Due to Linux :-) we cannot use SOL_ICMP=1 */
 #define SOL_TCP     6
 #define SOL_UDP     17
-//#define SOL_IPV6    41
+#define SOL_IPV6    41
 //#define SOL_ICMPV6  58
 //#define SOL_SCTP    132
 //#define SOL_UDPLITE 136 /* UDP-Lite (RFC 3828) */
@@ -418,6 +463,16 @@ extern int getsockopt(int sockfd, int level, int optname,
  */
 extern int setsockopt(int sockfd, int level, int optname,
 		const void *optval, socklen_t optlen);
+/**
+ * The socketpair() call creates an unnamed pair of connected
+ *      sockets in the specified domain, of the specified type, and using
+ *      the optionally specified protocol.  For further details of these
+ *      arguments, see socket(2).
+ *      The file descriptors used in referencing the new sockets are
+ *      returned in sv[0] and sv[1].  The two sockets are
+ *      indistinguishable.
+ */
+extern int socketpair(int domain, int type, int protocol, int sv[2]);
 
 __END_DECLS
 

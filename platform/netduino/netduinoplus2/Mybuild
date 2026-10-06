@@ -1,0 +1,21 @@
+package platform.netduino.netduinoplus2
+
+@Build(stage=1)
+@BuildArtifactPath(cppflags="-DSTM32F405xx")
+static module netduinoplus2_conf extends third_party.bsp.stmf4cube.stm32f4_conf {
+    @IncludeExport(path="")
+	source "cube_conf.h"
+}
+
+@Build(stage=1)
+@BuildDepends(netduinoplus2_conf)
+@BuildDepends(third_party.bsp.stmf4cube.cube)
+static module bsp extends third_party.bsp.st_bsp_api {
+	source "clock_config.c"
+
+	@NoRuntime depends third_party.bsp.stmf4cube.cube
+	@NoRuntime depends netduinoplus2_conf
+	@NoRuntime depends platform.stm32.stm32cube_compat
+    @NoRuntime depends platform.stm32.stm32cube_osc_config_f4
+    @NoRuntime depends platform.stm32.stm32cube_sysclock_init
+}

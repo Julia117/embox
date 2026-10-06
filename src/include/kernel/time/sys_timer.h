@@ -1,0 +1,233 @@
+/**
+ * @file
+ *
+ * @brief Interface of periodical timers with milliseconds precision.
+ *
+ * @details
+ *   for set timer use `sys_timer_init_start' or `sys_timer_set' functions.
+ *   for emulate non-periodical behavior use sys_timer_close function in the end of handler.
+ *
+ * @date 20.07.10
+ * @author Fedor Burdun
+ * @author Ilia Vaprol
+ */
+
+#ifndef KERNEL_TIME_SYS_TIMER_H_
+#define KERNEL_TIME_SYS_TIMER_H_
+
+#include <stdbool.h>
+#include <stdint.h>
+#include <sys/cdefs.h>
+#include <sys/types.h>
+#include <hal/cpu.h>
+#include <hal/ipl.h>
+
+#include <kernel/time/timer_strat.h>
+
+__BEGIN_DECLS
+
+struct sys_timer;
+
+/**
+ * Type of timer's handler. Function that will be called by timers every n-th
+ * milliseconds.
+ */
+typedef void (*sys_timer_handler_t)(struct sys_timer *timer, void *param);
+
+#define SYS_TIMER_PERIODIC       0x1
+#define SYS_TIMER_ONESHOT        0x0
+
+#define SYS_TIMER_STATE_PREALLOC 0x1
+#define SYS_TIMER_STATE_STARTED  0x2
+
+struct sys_timer_sharing {
+	uint8_t is_shared;
+	/* Shared on multiprocessor, each bit indicate a CPU */
+	uint32_t shared_cpu;
+};
+
+/**
+ * system timer structure
+ */
+struct sys_timer {
+	sys_timer_queue_t lnk;
+#ifdef SMP /* XXX */
+	sys_timer_queue_t multi_lnk[NCPU];
+	struct sys_timer_sharing *timer_sharing;
+#endif
+	struct dlist_head st_wait_link;
+
+	uint32_t load;
+	/* Clocks count at which timer should fire: cnt = current clocks() + load. */
+	clock_t cnt;
+	sys_timer_handler_t handle;
+	void *param;
+	unsigned int flags;
+	uint32_t state; /**< do we use sys_timer_set or timer_init_start? */
+};
+
+static inline bool sys_timer_is_preallocated(struct sys_timer *tmr) {
+	return tmr->state & SYS_TIMER_STATE_PREALLOC;
+}
+
+static inline void sys_timer_set_preallocated(struct sys_timer *tmr) {
+	tmr->state |= SYS_TIMER_STATE_PREALLOC;
+}
+
+static inline void sys_timer_clear_preallocated(struct sys_timer *tmr) {
+	tmr->state &= ~SYS_TIMER_STATE_PREALLOC;
+}
+
+#ifdef SMP /* XXX */
+static inline bool sys_timer_is_shared(struct sys_timer *tmr) {
+	if(tmr->timer_sharing) return tmr->timer_sharing->is_shared;
+	else return 0;
+}
+
+static inline void sys_timer_set_shared(struct sys_timer *tmr) {
+	if(tmr->timer_sharing) tmr->timer_sharing->is_shared = 1;
+}
+
+static inline void sys_timer_set_private(struct sys_timer *tmr) {
+	if(tmr->timer_sharing) tmr->timer_sharing->is_shared = 0;
+}
+#endif
+
+static inline bool sys_timer_is_started(struct sys_timer *tmr) {
+#ifdef SMP /* XXX */
+	ipl_t ipl = ipl_save();
+	unsigned int cpuid = cpu_get_id();
+	ipl_restore(ipl);
+	if(!sys_timer_is_shared(tmr)) {
+		return tmr->state & SYS_TIMER_STATE_STARTED;
+	}else{
+		if(tmr->state & SYS_TIMER_STATE_STARTED) {
+			if(tmr->timer_sharing->shared_cpu & (0x1 << cpuid))
+				return 1;
+			else
+				return 0;
+		}else{
+			return 0;
+		}
+	}
+
+#else
+	return tmr->state & SYS_TIMER_STATE_STARTED;
+#endif
+}
+
+static inline void sys_timer_set_started(struct sys_timer *tmr) {
+#ifdef SMP /* XXX */
+	ipl_t ipl = ipl_save();
+	unsigned int cpuid = cpu_get_id();
+	ipl_restore(ipl);
+	if(sys_timer_is_shared(tmr)) {
+		tmr->timer_sharing->shared_cpu |= (0x1 << cpuid);
+	}
+#endif
+	tmr->state |= SYS_TIMER_STATE_STARTED;
+}
+
+static inline void sys_timer_set_stopped(struct sys_timer *tmr) {
+#ifdef SMP /* XXX */
+	ipl_t ipl = ipl_save();
+	unsigned int cpuid = cpu_get_id();
+	ipl_restore(ipl);
+	if(sys_timer_is_shared(tmr)) {
+		tmr->timer_sharing->shared_cpu &= ~(0x1 << cpuid);
+		if(tmr->timer_sharing->shared_cpu == 0x0)
+			tmr->state &= ~SYS_TIMER_STATE_STARTED;
+	}else
+#endif
+		tmr->state &= ~SYS_TIMER_STATE_STARTED;
+}
+
+static inline bool sys_timer_is_periodic(struct sys_timer *tmr) {
+	return tmr->flags & SYS_TIMER_PERIODIC;
+}
+
+static inline int sys_timer_is_inited(struct sys_timer *tmr) {
+	return tmr->handle ? 1 : 0;
+}
+
+/** Type declaration for system timer structure */
+typedef struct sys_timer sys_timer_t;
+
+extern struct sys_timer *sys_timer_alloc(void);
+
+extern void sys_timer_free(struct sys_timer *tmr);
+
+
+/**
+ * Make timer bare initialization.
+ * Note, this not schedules timer.
+ *
+ * @param tmr
+ * @param flags
+ * @param handler
+ * @param param
+ */
+extern int sys_timer_init(struct sys_timer *tmr, unsigned int flags,
+    sys_timer_handler_t handler, void *param);
+
+/**
+ * Schedule timer to fire after specified amount of jiffes. Weither timer
+ * will be rescheduled determed by @c flags specified on initialization
+ *
+ * @param tmr
+ * @param jiffies
+ */
+extern void sys_timer_start(struct sys_timer *tmr, clock_t jiffies);
+
+extern void sys_timer_stop(struct sys_timer *tmr);
+
+/**
+ * Set 'handle' timer for executing every 'ticks' ms.
+ * Memory for set_tmr instance should be allocated before run timer_init_start.
+ *
+ * @param ptimer is pointer to preallocated buffer for system timer pointer.
+ * @param ticks assignable time (quantity of milliseconds)
+ * @param handler the function to be executed
+ *
+ * @return whether the timer is set
+ * @retval 0 if the timer is set
+ * @retval non-0 if the timer isn't set
+ */
+extern int sys_timer_init_start_msec(struct sys_timer *tmr, unsigned int flags,
+    uint32_t ticks, sys_timer_handler_t handler, void *param);
+
+/**
+ * Set @c handle timer for executing every @c jiffies of hardware timer ticks.
+ *
+ * @see description of sys_timer_set().
+ * @remarks
+ *    This function should call @c handler NO LESS then after @c jiffies ticks.
+ */
+extern int sys_timer_init_start(struct sys_timer *tmr, unsigned int flags,
+    clock_t jiffies, sys_timer_handler_t handler, void *param);
+
+/**
+ * Set 'handle' timer for executing every 'ticks' ms.
+ * Memory for set_tmr instance will be allocated inside sys_timer_set.
+ *
+ * @param ptimer is pointer to buffer of sys_timer_t *.
+ * @param ticks assignable time (quantity of milliseconds)
+ * @param handler the function to be executed
+ *
+ * @return whether the timer is set
+ * @retval 0 if the timer is set
+ * @retval non-0 if the timer isn't set
+ */
+extern int sys_timer_set(struct sys_timer **ptimer, unsigned int flags,
+    uint32_t ticks, sys_timer_handler_t handler, void *param);
+
+/**
+ * Shut down timer with system_tmr_t identity
+ *
+ * @param id timer identifier
+ */
+extern int sys_timer_close(struct sys_timer *ptimer);
+
+__END_DECLS
+
+#endif /* KERNEL_TIME_SYS_TIMER_H_ */

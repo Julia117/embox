@@ -1,0 +1,52 @@
+package embox.compat.posix.time
+
+static module clock {
+	source "clock.c"
+	source "time.c"
+	depends embox.kernel.time.kernel_time
+}
+
+static module timer {
+	option string log_level = "LOG_DEBUG"
+
+	source "timer.c"
+
+	depends embox.kernel.task.resource.timer_table
+}
+
+module months_short_names {
+	source "months_short_names.c"
+}
+
+module strptime {
+	source "strptime.c"
+
+	@NoRuntime depends months_short_names
+}
+
+module time {
+	source "ctime.c"
+	source "strftime.c"
+
+	@NoRuntime depends strptime
+	@NoRuntime depends months_short_names
+	@NoRuntime depends tzset
+	@NoRuntime depends localtime
+}
+
+module tzset {
+	source "tzset.c"
+}
+
+module localtime {
+	source "localtime.c"
+}
+
+static module nanosleep {
+	option string log_level="LOG_NONE"
+
+	source "clock_nanosleep.c"
+
+	depends embox.kernel.timer.sleep_api
+	depends embox.kernel.time.kernel_time
+}

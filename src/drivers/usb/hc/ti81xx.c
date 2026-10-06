@@ -10,12 +10,16 @@
 #include <errno.h>
 #include <string.h>
 #include <util/math.h>
-#include <util/bit.h>
+#include <lib/libds/bit.h>
 #include <hal/reg.h>
 #include <kernel/irq.h>
 #include <kernel/panic.h>
 #include <kernel/printk.h>
 #include <mem/misc/pool.h>
+
+#include <hal/mmu.h>
+#include <drivers/common/memory.h>
+#include <mem/vmem.h>
 
 #include <drivers/usb/usb.h>
 #include <embox/unit.h>
@@ -220,39 +224,10 @@ struct ti81xx_hcd_hci {
 };
 
 POOL_DEF(hcd_hcis, struct ti81xx_hcd_hci, USB_MAX_HCD);
-
+#if 0
 static inline struct ti81xx_hcd_hci *usb2hcd(struct usb_hcd *hcd) {
 	return hcd->hci_specific;
 }
-
-#define REG8_LOAD(reg) \
-	(* (volatile uint8_t *) reg)
-
-#define REG8_STORE(reg, val) \
-	do { \
-		* (volatile uint8_t *) reg = (uint8_t) val; \
-	} while(0);
-
-#define REG8_ANDIN(reg, val) \
-	REG8_STORE(reg, REG8_LOAD(reg) & (val));
-
-#define REG8_ORIN(reg, val) \
-	REG8_STORE(reg, REG8_LOAD(reg) | (val));
-
-#define REG16_LOAD(reg) \
-	(* (volatile uint16_t *) reg)
-
-#define REG16_STORE(reg, val) \
-	do { \
-		* (volatile uint16_t *) reg = (uint16_t) val; \
-	} while(0);
-
-#define REG16_ANDIN(reg, val) \
-	REG16_STORE(reg, REG16_LOAD(reg) & (val));
-
-#define REG16_ORIN(reg, val) \
-	REG16_STORE(reg, REG16_LOAD(reg) | (val));
-
 
 static irq_return_t ti81xx_irq(unsigned int irq_nr, void *data);
 
@@ -681,7 +656,7 @@ static int ti81xx_request(struct usb_request *req) {
 	}
 #endif
 
-	assert(host_endp_n < TI81_USB_ENDP_N, "no idle endpoint right now");
+	assertf(host_endp_n < TI81_USB_ENDP_N, "no idle endpoint right now");
 	ti81xx_endp_req_bind(hcdhci, TI81_ENDP_RX, host_endp_n, req);
 
 	if (endp->direction == USB_DIRECTION_IN) {
@@ -718,7 +693,7 @@ static void ti81xx_irq_generic_endp(uint16_t *csr,
 	uint16_t csr_v;
 	uint16_t errmask;
 
-	assert((count && fifo && read_done_mask)
+	assertf((count && fifo && read_done_mask)
 			|| (!count && !fifo && !read_done_mask),
 			"count, fifo, read_done_mask must be specified or "
 			"unspecified simultaneously");
@@ -833,19 +808,20 @@ static irq_return_t ti81xx_irq(unsigned int irq_nr, void *data) {
 
 	return IRQ_HANDLED;
 }
-
+#endif
 static int usb_ti81xx_init(void) {
+#if 0
 	struct usb_hcd *hcd;
 
-	static_assert(offsetof(struct ti81xx_usb, m_devctl) == 0x460);
-	static_assert(sizeof(struct ti81xx_endp_csr0) == 16);
-	static_assert(offsetof(struct ti81xx_endp_csr0, count0) == 0x08);
-	static_assert(sizeof(struct ti81xx_endp) == 16);
-	static_assert(offsetof(struct ti81xx_usb, m_hwver) == 0x46c);
-	static_assert(offsetof(struct ti81xx_usb, pad10) == 0x46e);
-	static_assert(offsetof(struct ti81xx_usb, csr0) == 0x500);
-	static_assert(offsetof(struct ti81xx_usb, csr[0]) == 0x510);
-	static_assert(offsetof(struct ti81xx_usb, m_index) == 0x40e);
+	static_assert(offsetof(struct ti81xx_usb, m_devctl) == 0x460, "");
+	static_assert(sizeof(struct ti81xx_endp_csr0) == 16, "");
+	static_assert(offsetof(struct ti81xx_endp_csr0, count0) == 0x08, "");
+	static_assert(sizeof(struct ti81xx_endp) == 16, "");
+	static_assert(offsetof(struct ti81xx_usb, m_hwver) == 0x46c, "");
+	static_assert(offsetof(struct ti81xx_usb, pad10) == 0x46e, "");
+	static_assert(offsetof(struct ti81xx_usb, csr0) == 0x500, "");
+	static_assert(offsetof(struct ti81xx_usb, csr[0]) == 0x510, "");
+	static_assert(offsetof(struct ti81xx_usb, m_index) == 0x40e, "");
 
 	REG_ANDIN(PRCM_P_DEFAULT_RSTCTL, 0xffffff9f);
 
@@ -869,4 +845,12 @@ static int usb_ti81xx_init(void) {
 	}
 
 	return usb_hcd_register(hcd);
+#endif
+	return 0;
 }
+
+PERIPH_MEMORY_DEFINE(hc_ti816x, PRCM_BASE, 0x1000);
+
+PERIPH_MEMORY_DEFINE(ti816x_cm, CM_BASE, 0x1000);
+
+PERIPH_MEMORY_DEFINE(ti816x_usb0, TI8168_USB0_BASE, 0x1000);

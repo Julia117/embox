@@ -1,0 +1,22 @@
+package platform.stm32.f4.stm32f411_blackpill
+
+@BuildArtifactPath(cppflags="-DSTM32F411xE")
+static module stm32f411_blackpill_conf extends third_party.bsp.stmf4cube.stm32f4_conf {
+	@IncludeExport(path="")
+	source "cube_conf.h"
+}
+
+@Build(stage=1)
+@BuildDepends(stm32f411_blackpill_conf)
+@BuildDepends(third_party.bsp.stmf4cube.cube)
+@BuildDepends(third_party.bsp.stmf4cube.bsp_drivers.stm324xg_eval_sd)
+static module bsp extends third_party.bsp.st_bsp_api {
+	option boolean errata_spi_wrong_last_bit = false
+
+	source "clock_config.c"
+
+	@NoRuntime depends third_party.bsp.stmf4cube.bsp_drivers.stm324xg_eval_sd
+	@NoRuntime depends third_party.bsp.stmf4cube.cube
+	@NoRuntime depends stm32f411_blackpill_conf
+	@NoRuntime depends platform.stm32.stm32cube_compat
+}

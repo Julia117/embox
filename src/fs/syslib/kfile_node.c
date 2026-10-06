@@ -14,37 +14,37 @@
 
 #include <fs/hlpr_path.h>
 #include <fs/perm.h>
-#include <fs/flags.h>
 #include <security/security.h>
 #include <fs/vfs.h>
+#include <fs/inode.h>
+#include <fs/inode_operation.h>
 #include <fs/path.h>
 #include <fs/fs_driver.h>
-#include <fs/file_operation.h>
+#include <fs/file_desc.h>
+#include <sys/time.h>
+#include <utime.h>
+#include <drivers/block_dev.h>
 
-int ktruncate(struct node *node, off_t length) {
+int ktruncate(struct inode *node, off_t length) {
 	int ret;
-	struct nas *nas;
-	struct fs_driver *drv;
 
-	if (node_is_directory(node)) {
+	if (S_ISDIR(node->i_mode)) {
 		SET_ERRNO(EISDIR);
 		return -1;
 	}
 
-	if (0 > (ret = fs_perm_check(node, FS_MAY_WRITE))) {
+	if (0 > (ret = fs_perm_check(node, S_IWOTH))) {
 		SET_ERRNO(-ret);
 		return -1;
 	}
 
-	nas = node->nas;
-	drv = nas->fs->drv;
-
-	if (NULL == drv || NULL == drv->fsop || NULL == drv->fsop->truncate) {
-		//errno = EPERM;
+	if ((!node->i_sb->sb_iops) || (!node->i_sb->sb_iops->ino_truncate)) {
+		//SET_ERRNO(ENOTSUP);
+		//SET_ERRNO(EPERM); it may mean that file it's not possible to modify
 		return 0;
 	}
 
-	if (0 > (ret = drv->fsop->truncate(node, length))) {
+	if (0 > (ret = node->i_sb->sb_iops->ino_truncate(node, length))) {
 		SET_ERRNO(-ret);
 		return -1;
 	}
@@ -52,19 +52,23 @@ int ktruncate(struct node *node, off_t length) {
 	return ret;
 }
 
-int kfile_fill_stat(struct node *node, struct stat *stat_buff) {
-	struct nas *nas;
-	struct node_info *ni;
+int kfile_change_stat(struct inode *node, const struct utimbuf *times) {
+	struct timeval now;
 
-	memset(stat_buff, 0 , sizeof(struct stat));
+	if (node == NULL) {
+		return -ENOENT;
+	}
 
-	nas = node->nas;
-	ni = &nas->fi->ni;
+	if (times == NULL) {
+		if (gettimeofday(&now, NULL) == -1) {
+			return -EINVAL;
+		}
+		inode_ctime_set(node, now.tv_sec);
+		return 0;
+	}
 
-	stat_buff->st_size = ni->size;
-	stat_buff->st_mode = node->mode;
-	stat_buff->st_uid = node->uid;
-	stat_buff->st_gid = node->gid;
+	inode_ctime_set(node, times->actime);
+	inode_mtime_set(node, times->modtime);
 
 	return 0;
 }

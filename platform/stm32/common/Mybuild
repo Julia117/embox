@@ -1,0 +1,29 @@
+package platform.stm32
+
+@BuildDepends(third_party.bsp.st_bsp_api)
+module platform_init extends platform.platform_init {
+    source "platform_init.c"
+}
+
+@BuildDepends(third_party.bsp.st_bsp_api)
+module platform_shutdown extends platform.platform_shutdown {
+    source "platform_shutdown.c"
+}
+
+@BuildDepends(third_party.bsp.st_bsp_api)
+module stm32cube_compat {
+    source "stm32cube_compat.c"
+}
+
+@BuildDepends(third_party.bsp.st_bsp_api)
+module stm32cube_sysclock_init {
+    source "stm32cube_sysclock_init.c"
+    @NoRuntime depends third_party.bsp.st_bsp_api
+    @NoRuntime depends platform.stm32.osc_config
+}
+
+
+module stm32cube_conf_eth_phy {
+    @IncludeExport(path="stm32")
+    source "stm32cube_conf_eth_phy.h"
+}

@@ -1,41 +1,30 @@
 /**
  * @file
- * @brief Creates file /dev/null
+ * @brief Creates /dev/null
  *
  * @date 08.09.11
- * @author Anton Kozlov
+ * @author Anton Kozlov -- original implementation
+ * @author Denis Deryugin <deryugin.denis@gmail.com> -- port to new vfs
  */
 
-#include <embox/device.h>
-#include <fs/file_operation.h>
-#include <stdlib.h>
+#include <stddef.h>
 
-#define NULL_DEV_NAME "null"
+#include <drivers/char_dev.h>
 
-/* forward declaration */
-static int null_init(void);
-static const struct kfile_operations null_ops;
-
-EMBOX_DEVICE(NULL_DEV_NAME, &null_ops, null_init);
-
-static int null_open(struct node *node, struct file_desc *file_desc, int flags) {
+static ssize_t null_read(struct char_dev *cdev, void *buf, size_t nbyte, int flags) {
 	return 0;
 }
 
-static int null_close(struct file_desc *desc) {
-	return 0;
+static ssize_t null_write(struct char_dev *cdev, const void *buf, size_t nbyte,
+    int flags) {
+	return nbyte;
 }
 
-static size_t null_write(struct file_desc *desc, void *buf, size_t size) {
-	return size;
-}
-
-static const struct kfile_operations null_ops = {
-		.open = null_open,
-		.close = null_close,
-		.write = null_write
+static const struct char_dev_ops null_cdev_ops = {
+    .read = null_read,
+    .write = null_write,
 };
 
-static int null_init(void) {
-	return char_dev_register(NULL_DEV_NAME, &null_ops);
-}
+static struct char_dev null_cdev = CHAR_DEV_INIT("null", &null_cdev_ops);
+
+CHAR_DEV_REGISTER(&null_cdev);

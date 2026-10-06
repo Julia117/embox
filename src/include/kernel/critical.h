@@ -167,8 +167,9 @@ static inline int critical_inside(unsigned int level) {
 
 static inline void critical_enter(unsigned int level) {
 	__critical_count_add(__CRITICAL_COUNT(level));
-	if (critical_count() == __CRITICAL_COUNT(level))
+	if (critical_count() == __CRITICAL_COUNT(level)) {
 		bkl_lock();
+	}
 }
 
 static inline void critical_leave(unsigned int level) {
@@ -187,6 +188,7 @@ __BEGIN_DECLS
 
 extern void critical_request_dispatch(struct critical_dispatcher *d);
 extern void critical_dispatch_pending(void);
+extern int  critical_dispatch_required(void);
 
 __END_DECLS
 

@@ -19,7 +19,7 @@
 #include <kernel/sched/sched_lock.h>
 #include <kernel/sched/waitq.h>
 #include <kernel/thread/waitq.h>
-#include <util/ring_buff.h>
+#include <lib/libds/ring_buff.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -81,7 +81,7 @@ static const struct {
 static QList<QEmboxVCWindowSurface*> __emboxVCcollection;
 extern QEmboxVC *globalEmboxVC;
 extern void emboxRootWindowShow(int width, int height);
-static const struct fb_var_screeninfo *globalEmboxVC_vinfo;
+static struct fb_var_screeninfo globalEmboxVC_vinfo;
 
 static void flushAll() {
 	QRegion region;
@@ -97,11 +97,11 @@ static void __emboxVCsetMode(struct vc *vc, int mode) {
 }
 
 static void __visualization(struct vc *vc, struct fb_info *info) {
-	globalEmboxVC_vinfo = fb_get_var(info);
+	fb_get_var(info, &globalEmboxVC_vinfo);
 
 	__emboxVCsetMode(vc, 1);
 
-	emboxRootWindowShow(globalEmboxVC_vinfo->xres, globalEmboxVC_vinfo->yres);
+	emboxRootWindowShow(globalEmboxVC_vinfo.xres, globalEmboxVC_vinfo.yres);
 
 	globalEmboxVC->is_visualized = true;
 	waitq_wakeup_all(&globalEmboxVC->visualize);
@@ -171,9 +171,9 @@ void *readMouseDataThread(void *arg) {
 
 		bstate = Qt::NoButton;
 
-		if (ev.type & 1) {
+		if (ev.type & MOUSE_BUTTON_LEFT) {
 			bstate = Qt::LeftButton;
-		} else if (ev.type & 2) {
+		} else if (ev.type & MOUSE_BUTTON_RIGHT) {
 			bstate = Qt::RightButton;
 		}
 
@@ -259,13 +259,13 @@ void *readKbdThread(void *arg) {
 
 		SCHED_LOCKED_DO_INTRET(ring_buff_dequeue(kh->ring_buff, &ev, sizeof(struct input_event)));
 
-		type = ev.type & KEY_PRESSED ? QEvent::KeyPress : QEvent::KeyRelease;
+		type = ev.type & KBD_KEY_PRESSED ? QEvent::KeyPress : QEvent::KeyRelease;
 
-		if (ev.value & SHIFT_PRESSED) {
+		if (ev.value & KBD_SHIFT_PRESSED) {
 			modifier = Qt::ShiftModifier;
-		} else if (ev.value & ALT_PRESSED) {
+		} else if (ev.value & KBD_ALT_PRESSED) {
 			modifier = Qt::AltModifier;
-		} else if (ev.value & CTRL_PRESSED) {
+		} else if (ev.value & KBD_CTRL_PRESSED) {
 			modifier = Qt::ControlModifier;
 		}
 
@@ -274,7 +274,7 @@ void *readKbdThread(void *arg) {
 		key = 0;
 		i = 0;
 		while (emboxKeyMap[i].keysym != 0) {
-			if (emboxKeyMap[i].keysym == ascii[i]) {
+			if (emboxKeyMap[i].keysym == ascii[0]) {
 				key = emboxKeyMap[i].keycode;
 				break;
 			}

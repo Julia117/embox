@@ -9,11 +9,10 @@
 
 #include <kernel/task.h>
 
-#include <kernel/task/idesc_table.h>
 #include <kernel/task/resource/idesc_table.h>
-#include <fs/idesc.h>
+#include <kernel/task/resource/idesc.h>
 
-#include <fs/index_descriptor.h>
+#include <kernel/task/resource/index_descriptor.h>
 
 static inline struct idesc_table *task_self_idesc_table(void) {
 	struct idesc_table *it;
@@ -53,7 +52,7 @@ int index_descriptor_cloexec_set(int fd, int cloexec) {
 	it = task_resource_idesc_table(task_self());
 	assert(it);
 
-	if (cloexec | FD_CLOEXEC) {
+	if (cloexec & FD_CLOEXEC) {
 		idesc_cloexec_set(it->idesc_table[fd]);
 	} else {
 		idesc_cloexec_clear(it->idesc_table[fd]);
@@ -69,9 +68,10 @@ int index_descriptor_flags_get(int fd) {
 		return -ENOENT;
 	}
 
-	return idesc->idesc_flags;
+	return idesc->idesc_flags & ~O_ACCESS_MASK;
 }
 
+#define SETFL_MASK (O_APPEND | O_NONBLOCK | O_NDELAY | O_DIRECT)
 int index_descriptor_flags_set(int fd, int flags) {
 	struct idesc *idesc;
 
@@ -80,7 +80,7 @@ int index_descriptor_flags_set(int fd, int flags) {
 		return -ENOENT;
 	}
 
-	idesc->idesc_flags = flags;
+	idesc->idesc_flags = (flags & SETFL_MASK) | (idesc->idesc_flags & ~SETFL_MASK);
 
 	return 0;
 }

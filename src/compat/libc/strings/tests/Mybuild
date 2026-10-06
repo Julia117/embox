@@ -1,0 +1,28 @@
+package embox.compat.libc.strings.test
+
+/**
+ * Tests for standard functions must be compiled with the '-fno-builtin' flag.
+ * This flag prevents GCC from using built-in versions of standard functions,
+ * forcing it to use the actual library implementations.
+ */
+
+
+module strcasecmp_test {
+	@Cflags("-fno-builtin")
+	source "strcasecmp_test.c"
+}
+
+module ffs_test {
+	@Cflags("-fno-builtin")
+	source "ffs_test.c"
+}
+
+module bcopy_test {
+	@Cflags("-fno-builtin")
+	source "bcopy_test.c"
+}
+
+module bzero_test {
+	@Cflags("-fno-builtin")
+	source "bzero_test.c"
+}

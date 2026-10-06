@@ -1,0 +1,9 @@
+package embox.cmd.hw.can_utils
+
+@AutoCmd
+@Cmd(name="candump",help="dump CAN traffic")
+module candump {
+	source "candump.c"
+
+	@NoRuntime depends embox.device.can_dev
+}

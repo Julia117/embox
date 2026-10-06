@@ -14,14 +14,16 @@
 #include <errno.h>
 #include <stdarg.h>
 
+#define DIAG_NAME "diag"
+
 extern int diag_fd(void);
 
-int setup_tty(const char *dev_name) {
+const char *setup_tty(const char *dev_name) {
 	int fd;
 
 	fd = diag_fd();
 	if (fd < 0) {
-		return fd;
+		return NULL;
 	}
 
 	dup2(fd, STDIN_FILENO);
@@ -32,5 +34,5 @@ int setup_tty(const char *dev_name) {
 		close(fd);
 	}
 
-	return 0;
+	return DIAG_NAME;
 }

@@ -1,17 +1,14 @@
 package embox.driver.input.keyboard
 
-module keyboard {
-	source "keyboard.c"
-
-	option number register_in_vt = 1
-
-	depends embox.driver.input.core
-}
-
 module keymap {
 	source "keymap.c"
 }
 
-module diag {
-	depends keyboard
+module ps_keyboard {
+	option string log_level="LOG_ERR"
+
+	@IncludeExport(path="drivers")
+	source "ps_keyboard.h"
+
+	source "ps_keyboard.c"
 }

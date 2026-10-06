@@ -1,0 +1,23 @@
+
+package embox.compat.posix.signal.test
+
+module sigwait_test {
+	source "sigwait_test.c"
+}
+
+module sigchld_test {
+	source "sigchld_test.c"
+}
+
+module rtsignal_test {
+	source "rt_signal_test.c"
+}
+
+module signal_test {
+	source "signal_test.c"
+}
+
+//@TestFor(embox.compat.posix.pthreads)
+module pthread_kill_test {
+	source "pthread_kill_test.c"
+}

@@ -1,0 +1,9 @@
+package embox.kernel.task.resource
+
+module atexit {
+	@IncludeExport(path="kernel/task/resource")
+	source "atexit.h"
+	source "atexit.c"
+
+	depends embox.kernel.task.task_resource
+}

@@ -8,7 +8,6 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <drivers/keyboard.h>
 #include <drivers/input/input_dev.h>
 #include <drivers/input/keymap.h>
 
@@ -56,14 +55,10 @@ int keymap_kbd(struct input_event *event) {
 		return -1;
 	}
 
-	if (!(event->type & KEY_PRESSED)) {
-		return -1;
-	}
-
-	cur_map = event->value & SHIFT_PRESSED ? shift_map : key_map;
+	cur_map = event->value & KBD_SHIFT_PRESSED ? shift_map : key_map;
 	val = cur_map[key_index];
 
-	if (event->value & CTRL_PRESSED){
+	if (event->value & KBD_CTRL_PRESSED){
 		val = val < 0x40 ? 0 : val & KEYBOARD_CTRL_MASK;
 	}
 
@@ -74,7 +69,7 @@ int keymap_to_ascii(struct input_event *event, unsigned char ascii_buff[4]) {
 	int keycode = keymap_kbd(event);
 	int seq_len = 0;
 
-	if(keycode < 0) {
+	if (keycode < 0 || !(event->type & KBD_KEY_PRESSED)) {
 		return 0;
 	}
 
@@ -104,7 +99,7 @@ int keymap_to_ascii(struct input_event *event, unsigned char ascii_buff[4]) {
 		/*0x7e325b1b */
 		seq_len = 4;
 		ascii_buff[2] = 0x32;
-		ascii_buff[2] = 0x7e;
+		ascii_buff[3] = 0x7e;
 		break;
 	case KEY_HOME:
 		/* 0x485b1b */
@@ -120,13 +115,13 @@ int keymap_to_ascii(struct input_event *event, unsigned char ascii_buff[4]) {
 		/* 0x7e355b1b */
 		seq_len = 4;
 		ascii_buff[2] = 0x35;
-		ascii_buff[2] = 0x7e;
+		ascii_buff[3] = 0x7e;
 		break;
 	case KEY_PGDN:
 		/* 0x7e365b1b */
 		seq_len = 4;
 		ascii_buff[2] = 0x36;
-		ascii_buff[2] = 0x7e;
+		ascii_buff[3] = 0x7e;
 		break;
 	case KEY_UP:
 		/* 0x415b1b */

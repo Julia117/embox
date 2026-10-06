@@ -25,6 +25,8 @@
 #include <kernel/printk.h>
 #include <kernel/thread.h>
 #include <kernel/time/ktime.h>
+#include <sys/mman.h>
+#include <mem/vmem_device_memory.h>
 
 #ifdef DEBUG
 #define PRINTD(msg) printk("ACPICA OSL DEBUG: " msg "\n")
@@ -100,8 +102,14 @@ ACPI_STATUS AcpiOsPhysicalTableOverride(
 
 void *AcpiOsMapMemory(ACPI_PHYSICAL_ADDRESS Where, ACPI_SIZE Length) {
 	PRINTD("AcpiOsMapMemory() called");
-
-	return ACPI_PHYSADDR_TO_PTR(Where);
+	if (MAP_FAILED == mmap_device_memory((void *) Where,
+                Length,
+                PROT_READ | PROT_WRITE | PROT_NOCACHE,
+                MAP_FIXED,
+                (uintptr_t)Where)) {
+		return NULL;
+	}
+	return ACPI_TO_POINTER(Where);
 }
 
 void AcpiOsUnmapMemory(void *LogicalAddress, ACPI_SIZE Size) {
@@ -167,6 +175,32 @@ void AcpiOsSleep(UINT64 Milliseconds) {
 	PRINTD("AcpiOsSleep() called");
 
 	ksleep(Milliseconds);
+}
+
+/******************************************************************************
+ *
+ * FUNCTION:    AcpiOsEnterSleep
+ *
+ * PARAMETERS:  SleepState          - Which sleep state to enter
+ *              RegaValue           - Register A value
+ *              RegbValue           - Register B value
+ *
+ * RETURN:      Status
+ *
+ * DESCRIPTION: A hook before writing sleep registers to enter the sleep
+ *              state. Return AE_CTRL_TERMINATE to skip further sleep register
+ *              writes.
+ *
+ *****************************************************************************/
+
+ACPI_STATUS
+AcpiOsEnterSleep (
+    UINT8                   SleepState,
+    UINT32                  RegaValue,
+    UINT32                  RegbValue)
+{
+
+    return (AE_OK);
 }
 
 void AcpiOsStall(UINT32 Microseconds) {

@@ -6,69 +6,61 @@
  * @author Anton Bondarev
  */
 
-#ifndef SYS_TYPES_H_
-#define SYS_TYPES_H_
+#ifndef COMPAT_POSIX_SYS_TYPES_H_
+#define COMPAT_POSIX_SYS_TYPES_H_
 
 #ifndef __ASSEMBLER__
 
-#include <asm/types.h>
+#include <stddef.h> /* The <sys/types.h> header shall define size_t */
+#include <stdint.h>
+#include <sys/cdefs.h>
 
-#include <defines/size_t.h>
+typedef unsigned long blkcnt_t;   /* file block counts */
+typedef unsigned long blksize_t;  /* block sizes */
+typedef uint64_t clock_t;         /* jiffies (can overflow if < 64-bit) */
+typedef unsigned long fsblkcnt_t; /* file system block counts */
+typedef unsigned long fsfilcnt_t; /* file system file counts */
+typedef unsigned long ino_t;      /* file serial numbers */
+typedef uint32_t clockid_t;       /* clock ID type */
+typedef uint32_t timer_t;         /* timer ID */
+typedef uint32_t dev_t;           /* device IDs */
+typedef uint32_t key_t;           /* XSI interprocess communication */
+typedef uint32_t mode_t;          /* some file attributes */
+typedef unsigned short gid_t;     /* group IDs */
+typedef unsigned short nlink_t;   /* link counts */
+typedef unsigned short uid_t;     /* user IDs */
+typedef int pid_t;                /* process IDs */
+typedef int id_t;                 /*  general identifier */
+typedef int ssize_t;              /* a count of bytes or an error */
+typedef long off_t;               /* file sizes */
+typedef long time_t;              /* time in seconds */
+typedef long suseconds_t;         /* time in microseconds (signed) */
+typedef unsigned long useconds_t; /* time in microseconds */
 
-/** Note also that 'size_t' is a typedef required by the ISO C standard
- (it must be available if <stddef.h> is included). However, 'ssize_t'
- does not exist in the C standard -- the standard 'ptrdiff_t'
- typedef is nearly equivalent.*/
-typedef int ssize_t;
-
-/** Used for system times in clock ticks or CLOCKS_PER_SEC*/
-#include <defines/clock_t.h>
-
-
-/** Used for time in microseconds.*/
-typedef unsigned long useconds_t;
-
-/** Used for time in microseconds.*/
-#include <defines/suseconds_t.h>
-
-typedef __u32 gfp_t;
-
-typedef struct {
-	volatile int counter;
-} atomic_t;
-
-
-#include <defines/time_t.h>
-#include <defines/timer_t.h>
-
-typedef int id_t;
-
-typedef int pid_t;
-
-typedef int dev_t;
-
-
-#include <defines/clockid_t.h>
-
-
-typedef unsigned int ino_t;
-
-typedef unsigned short nlink_t;
-
-typedef unsigned int mode_t;
-
-typedef unsigned short uid_t;
-typedef unsigned short gid_t;
-
+/* Not part of posix */
+typedef uint64_t loff_t; /* Used for file sizes (64-bit version) */
+typedef uint32_t gfp_t;
 typedef unsigned int blkno_t;
 
-typedef int off_t;  /*  Used for file sizes. */
+__BEGIN_DECLS
 
-typedef long long loff_t;
+static inline dev_t makedev(int maj, int min) {
+	return ((dev_t)(((maj & 0xFFFF) << 16) | (min & 0xFFFF)));
+}
 
-typedef unsigned long fsblkcnt_t;
-typedef unsigned long fsfilcnt_t;
+static inline unsigned int major(dev_t dev) {
+	return (unsigned int)((dev >> 16) & 0xFFFF);
+}
+
+static inline unsigned int minor(dev_t dev) {
+	return (unsigned int)(dev & 0xFFFF);
+}
+
+__END_DECLS
+
+/* For compatibility with Linux */
+#include <bits/types.h>
 
 #endif /* __ASSEMBLER__ */
 
-#endif /* SYS_TYPES_H_ */
+#endif /* COMPAT_POSIX_SYS_TYPES_H_ */

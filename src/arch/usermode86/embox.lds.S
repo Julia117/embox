@@ -13,9 +13,9 @@ _ram_size = LENGTH(RAM);
 
 SECTIONS {
 	.text : {
-		*(.trap_table)
+		KEEP(*(.trap_table));
 		*(.text)
 		*(.text.*)
 		*(.glue_7t) *(.glue_7)
-	}
+	} SECTION_REGION(text) :text
 }

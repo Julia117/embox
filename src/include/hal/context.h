@@ -15,7 +15,6 @@
 #define HAL_CONTEXT_H_
 
 #include <module/embox/arch/context.h>
-#include <stdbool.h>
 
 #ifndef __ASSEMBLER__
 
@@ -32,8 +31,14 @@ struct context;
  * @param routine_fn Context's IP (instruction pointer)
  * @param sp Context's SP (stack pointer)
  */
+#ifndef CONTEXT_USE_STACK_SIZE
 extern void context_init(struct context *ctx, unsigned int flags,
 		void (*routine_fn)(void), void *sp);
+#else
+/* Currently, this version required only by E2K (Elbrus). */
+extern void context_init(struct context *ctx, unsigned int flags,
+		void (*routine_fn)(void), void *sp, unsigned int stack_size);
+#endif
 
 /**
  * Changes current thread context. Save previous thread context and load

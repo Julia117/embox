@@ -13,13 +13,12 @@
  *         - Documenting and library code cleanup
  */
 
-#ifndef STRING_H_
-#define STRING_H_
+#ifndef COMPAT_LIBC_STRING_H_
+#define COMPAT_LIBC_STRING_H_
 
-#include <defines/null.h>
-#include <defines/size_t.h>
-
+#include <stddef.h>
 #include <sys/cdefs.h>
+
 __BEGIN_DECLS
 
 /**
@@ -65,6 +64,19 @@ extern char *strcpy(char *dst, const char *src);
  *   it does not guarantee that the result is a null-terminated string.
  */
 extern char *strncpy(char *dst, const char *src, size_t n);
+
+/**
+ * @brief Copy string from src to dest 
+ *
+ * @param dest
+ * @param src
+ *
+ * @note  Arrays should not overlap
+ * @note  This functions differs from strcpy() in return value
+ *
+ * @return Pointer to terminating NULL of the string dest
+ */
+extern char *stpcpy(char *dest, const char *src);
 
 /**
  * Appends a null-terminated string to the end of another.
@@ -136,6 +148,39 @@ extern int strcmp(const char *str1, const char *str2);
  * @see strcmp()
  */
 extern int strncmp(const char *str1, const char *str2, size_t n);
+
+/** 
+ * Compare two strings using C locale.
+ * @param s1
+ *   The first string.
+ * @param s2
+ *   The second string.
+ * @return
+ *   Comparison result using LC_COLLATE=C.
+ * @retval 0
+ *   If the strings are equal.
+ * @retval positive
+ *   If @a s1 is greater than @a s2.
+ * @retval negative
+ *   If @a s1 is less than @a s2.
+ * Throw assert if character is not ASCII.
+ */
+extern int strcoll(const char *s1, const char *s2);
+
+/**
+ * Copy no more than n symbols from src to dest in such way that
+ * strcmp with modified strings works in the same way as strcoll.
+ * @param dest
+ *   Destination string.
+ * @param s2
+ *   Source string.
+ * @return
+ *   Number of bytes required to store the transformed string in
+ *   dest excluding the terminating null byte ('\0').
+ * @retval 0
+ * Throw assert if character is not ASCII.
+ */
+extern size_t strxfrm(char *dest, const char *src, size_t n);
 
 /**
  * Finds the first occurrence of the character @a ch (converted to a @c char)
@@ -218,14 +263,53 @@ extern char *strstr(const char *haystack, const char *needle);
 extern char *strcasestr(const char *haystack, const char *needle);
 
 /**
- * Maps given error code to its string representation.
+ * Get error message string.
  *
- * @param errno
+ * @param errnum
  *   The error code.
  * @return
  *   C-style string, containing a descriptive error message
  */
-extern char *strerror(int err);
+extern char *strerror(int errnum);
+
+/**
+ * Get error message string.
+ *
+ * @param errno
+ *   The error code.
+ * @param strerrbuf
+ *   Pointer to error message buffer.
+ * @param buflen
+ *   Length of error message buffer.
+ * @retval 0
+ *   If successful.
+ * @retval -1 (ERANGE)
+ *   Insufficient storage was supplied to contain error message string.
+ */
+extern int strerror_r(int errnum, char *strerrbuf, size_t buflen);
+
+/**
+ * Copies no more than @a n bytes from memory area @a src
+ * to memory area @a dest,
+ * stopping when the character @a c is found.
+ * 
+ * @param dest
+ *  Destination buffer
+ * @param src
+ *  The object in memory being copied
+ * @param n
+ *  The number of bytes to copy
+ * @param c
+ *  Character to stop copying when found.
+ * @return
+ *  Pointer to the destination buffer.
+ * 
+ * @note
+ *  If the memory areas overlap, the results are undefined.
+ * @see memcpy()
+ *  It does the same thing, but it doesn't stop at c.
+ */
+extern void *memccpy(void *dest, const void *src, int c, size_t n);
 
 /**
  * Copies @a n bytes from @a src to @a dst which must be two non-overlapping
@@ -480,73 +564,62 @@ extern size_t strnlen(const char *s, size_t maxlen);
  */
 extern char *strndup(const char *s, size_t size);
 
-#if 0 /* NOT IMPLEMENTED */
 /**
- * The memccpy() function copies bytes from memory area s2 into s1, stopping
- * after the first occurrence of byte c (converted to an unsigned char) is
- * copied, or after n bytes are copied, whichever comes first. If copying takes
- * place between objects that overlap, the behaviour is undefined.
+ * Finds the first occurrence of the byte sequence @a needle of length @a ne_len
+ * in the memory area pointed to by @a haystack of length @a hs_len.
  *
- * @param s1
- * @param s2
- * @param c
- * @param n
- *
- * @return The memccpy() function returns a pointer to the byte after the copy
- * of c in s1, or a null pointer if c was not found in the first n bytes of s2.
+ * @param haystack
+ *   Pointer to the memory block to be searched.
+ * @param hs_len
+ *   Length in bytes of the memory block @a haystack.
+ * @param needle
+ *   Pointer to the byte sequence to search for.
+ * @param ne_len
+ *   Length in bytes of the byte sequence @a needle.
+ * @return
+ *   Pointer to the beginning of the located byte sequence within
+ *   @a haystack if a match is found. If @a ne_len is zero, returns
+ *   @a haystack. Returns NULL if no match is found.
  */
-extern void *memccpy(void *s1, const void *s2, int c, size_t n);
-/**
- * The strcoll() function compares the string pointed to by s1 to the string
- * pointed to by s2, both interpreted as appropriate to the LC_COLLATE category
- * of the current locale.
- * The strcoll() function will not change the setting of errno if successful.
- * Because no return value is reserved to indicate an error, an application
- * wishing to check for error situations should set errno to 0, then call
- * strcoll(), then check errno.
- *
- * @param s1
- * @param s2
- *
- * @return Upon successful completion, strcoll() returns an integer greater
- * than, equal to or less than 0, according to whether the string pointed to by
- * s1 is greater than, equal to or less than the string pointed to by s2 when
- * both are interpreted as appropriate to the current locale. On error,
- * strcoll() may set errno, but no return value is reserved to indicate an
- * error.
- */
-extern int strcoll(const char *s1, const char *s2);
+extern void *memmem(const void *haystack, size_t hs_len, const void *needle,
+    size_t ne_len);
 
 /**
- * The strxfrm() function transforms the string pointed to by s2 and places the
- * resulting string into the array pointed to by s1. The transformation is such
- * that if strcmp() is applied to two transformed strings, it returns a value
- * greater than, equal to or less than 0, corresponding to the result of
- * strcoll() applied to the same two original strings. No more than n bytes are
- * placed into the resulting array pointed to by s1, including the terminating
- * null byte. If n is 0, s1 is permitted to be a null pointer. If copying takes
- * place between objects that overlap, the behaviour is undefined.
- * The strxfrm() function will not change the setting of errno if successful.
- * Because no return value is reserved to indicate an error, an application
- * wishing to check for error situations should set errno to 0, then call
- * strcoll(), then check errno.
+ * Appends a null-terminated string to the end of another
+ * string in size-bounded buffer.
  *
- * @param s1
- * @param s2
- * @param n
- * @return Upon successful completion, strxfrm() returns the length of the
- * transformed string (not including the terminating null byte). If the value
- * returned is n or more, the contents of the array pointed to by s1 are
- * indeterminate.
- * On error, strxfrm() may set errno but no return value is reserved to
- * indicate an error.
+ * @param dst
+ *   Destination null-terminated string to append the @param src to.
+ * @param src
+ *   The string being appended.
+ * @param size
+ *   Size of the destination buffer.
+ * @return
+ *   Length of @param dst string without terminating null byte.
  */
-extern size_t strxfrm(char *s1, const char *s2, size_t n);
+extern size_t strlcat(char *dst, const char *src, size_t size);
 
-#endif
+/**
+ * Copies a null-terminated string to size-bounded buffer.
+ *
+ * @param dst
+ *   Destination buffer.
+ * @param src
+ *   The string being copied.
+ * @param size
+ *   Size of the destination buffer.
+ * @return
+ *   Length of @param dst string without terminating null byte.
+ */
+extern size_t strlcpy(char *dst, const char *src, size_t size);
 
-#include <string_bsd.h>
+
+/* stubs */
+extern char *strsignal(int signum);
 
 __END_DECLS
 
-#endif /* STRING_H_ */
+/* For compatibility with Linux */
+#include <strings.h>
+
+#endif /* COMPAT_LIBC_STRING_H_ */

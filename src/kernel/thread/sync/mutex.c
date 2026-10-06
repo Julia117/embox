@@ -44,26 +44,40 @@ void mutex_init(struct mutex *m) {
 	mutexattr_settype(&m->attr, MUTEX_RECURSIVE);
 }
 
-int mutex_lock(struct mutex *m) {
+int mutex_lock_common(struct mutex *m,
+			const struct timespec *abstime) {
 	struct schedee *current = schedee_get_current();
 	int errcheck;
 	int ret, wait_ret;
+	int timeout;
 
 	assert(m);
+	assert(!critical_inside(__CRITICAL_HARDER(CRITICAL_SCHED_LOCK)));
 
 	errcheck = (m->attr.type == MUTEX_ERRORCHECK);
 
-	wait_ret = WAITQ_WAIT(&m->wq, ({
+	if (abstime == NULL) {
+		timeout = SCHED_TIMEOUT_INFINITE;
+	}
+	else {
+		struct timespec current_time, time_to_wait;
+
+		clock_gettime(CLOCK_REALTIME, &current_time);
+		time_to_wait = timespec_sub(*abstime, current_time);
+		timeout = timespec_to_ns(&time_to_wait) / NSEC_PER_MSEC;
+	}
+
+	wait_ret = WAITQ_WAIT_TIMEOUT(&m->wq, ({
 		int done;
 
 		sched_lock();
 		ret = mutex_trylock(m);
 		done = (ret == 0) || (errcheck && ret == -EDEADLK);
 		if (!done)
-			priority_inherit(current, m);
+			mutex_priority_inherit(current, m);
 		sched_unlock();
 		done;
-	}));
+	}), timeout);
 
 	if (wait_ret != 0) {
 		ret = wait_ret;
@@ -72,12 +86,23 @@ int mutex_lock(struct mutex *m) {
 	return ret;
 }
 
+int mutex_timedlock(struct mutex *m,
+			const struct timespec *abstime) {
+	return mutex_lock_common(m, abstime);
+}
+
+int mutex_lock(struct mutex *m) {
+	return mutex_lock_common(m, NULL);
+}
+
+
 static inline int mutex_this_owner(struct mutex *m) {
 	return m->holder == schedee_get_current();
 }
 
 int mutex_trylock(struct mutex *m) {
 	int res;
+	struct schedee *current = schedee_get_current();
 
 	assert(m);
 	assert(!critical_inside(__CRITICAL_HARDER(CRITICAL_SCHED_LOCK)));
@@ -89,7 +114,7 @@ int mutex_trylock(struct mutex *m) {
 	{
 		if (m->attr.type == MUTEX_ERRORCHECK) {
 			if (!mutex_this_owner(m)) {
-				res = mutex_trylock_schedee(m);
+				res = mutex_trylock_schedee(current, m);
 			} else {
 				res = -EDEADLK;
 			}
@@ -98,10 +123,10 @@ int mutex_trylock(struct mutex *m) {
 				++m->lock_count;
 				res = 0;
 			} else {
-				res = mutex_trylock_schedee(m);
+				res = mutex_trylock_schedee(current, m);
 			}
 		} else {
-			res = mutex_trylock_schedee(m);
+			res = mutex_trylock_schedee(current, m);
 		}
 	}
 	sched_unlock();
@@ -111,6 +136,7 @@ int mutex_trylock(struct mutex *m) {
 
 int mutex_unlock(struct mutex *m) {
 	int res;
+	struct schedee *current = schedee_get_current();
 
 	assert(m);
 	assert(!critical_inside(__CRITICAL_HARDER(CRITICAL_SCHED_LOCK)));
@@ -120,7 +146,7 @@ int mutex_unlock(struct mutex *m) {
 	{
 		if (m->attr.type == MUTEX_ERRORCHECK) {
 			if (mutex_this_owner(m)) {
-				mutex_unlock_schedee(m);
+				mutex_unlock_schedee(current, m);
 			} else {
 				res = -EPERM;
 			}
@@ -128,13 +154,13 @@ int mutex_unlock(struct mutex *m) {
 			if (mutex_this_owner(m)) {
 				assert(m->lock_count > 0);
 				if (--m->lock_count == 0) {
-					mutex_unlock_schedee(m);
+					mutex_unlock_schedee(current, m);
 				}
 			} else {
 				res = -EPERM;
 			}
 		} else {
-			mutex_unlock_schedee(m);
+			mutex_unlock_schedee(current, m);
 		}
 	}
 	sched_unlock();

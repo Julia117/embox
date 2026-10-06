@@ -10,15 +10,15 @@
 #include <string.h>
 #include <embox/unit.h>
 
-#include <pnet/types.h>
-#include <pnet/core.h>
-#include <pnet/node.h>
-#include <pnet/repo.h>
-#include <pnet/pnet_pack.h>
-#include <pnet/dev.h>
+#include <pnet/core/types.h>
+#include <pnet/core/core.h>
+#include <pnet/core/node.h>
+#include <pnet/core/repo.h>
+#include <pnet/pack/pnet_pack.h>
+#include <pnet/core/dev.h>
 
 #include <net/netdevice.h>
-#include <util/hashtable.h>
+#include <lib/libds/hashtable.h>
 
 EMBOX_UNIT_INIT(net_dev_init);
 

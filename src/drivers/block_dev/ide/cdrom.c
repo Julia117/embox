@@ -10,26 +10,30 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <limits.h>
 
 #include <asm/io.h>
 
 #include <kernel/sched/sched_lock.h>
 #include <arpa/inet.h>
 #include <drivers/ide.h>
-#include <embox/block_dev.h>
+#include <drivers/block_dev.h>
 #include <mem/phymem.h>
-#include <util/indexator.h>
+#include <lib/libds/indexator.h>
+
 #include <kernel/time/ktime.h>
-#include <limits.h>
+#include <kernel/thread/waitq.h>
 
 #define CD_WAIT_US 3000
 
-#define MAX_DEV_QUANTITY OPTION_GET(NUMBER,dev_quantity)
-INDEX_DEF(idecd_idx,0,MAX_DEV_QUANTITY);
+#define MAX_IDE_QUANTITY OPTION_GET(NUMBER,dev_quantity)
+INDEX_DEF(idecd_idx, 0, MAX_IDE_QUANTITY);
 
-static int atapi_packet_read(hd_t *hd, unsigned char *pkt,
-		                     int pktlen, char *buffer, size_t bufsize) {
-	hdc_t *hdc;
+static const struct block_dev_ops idecd_pio_driver;
+
+static int atapi_packet_read(struct hd *hd, unsigned char *pkt,
+		int pktlen, char *buffer, size_t bufsize) {
+	struct hdc *hdc;
 	int result;
 	char *bufp;
 	int bufleft;
@@ -70,7 +74,9 @@ static int atapi_packet_read(hd_t *hd, unsigned char *pkt,
 	/* Data transfer */
 	while (1) {
 		/* Wait until data ready */
-		usleep(CD_WAIT_US);
+
+		WAITQ_WAIT(&hdc->waitq, hdc->result);
+		hdc->result = 0;
 
 		/* Check for errors */
 		if (hdc->status & HDCS_ERR) {
@@ -109,7 +115,7 @@ static int atapi_packet_read(hd_t *hd, unsigned char *pkt,
 	return result == 0 ? bufsize - bufleft : -EIO;
 }
 
-static int atapi_read_capacity(hd_t *hd) {
+static int atapi_read_capacity(struct hd *hd) {
 	unsigned char pkt[12];
 	unsigned long buf[2];
 	unsigned long blks;
@@ -127,10 +133,11 @@ static int atapi_read_capacity(hd_t *hd) {
 	}
 
 	blks = ntohl(buf[0]);
+
 	return blks;
 }
 
-static int atapi_request_sense(hd_t *hd) {
+static int atapi_request_sense(struct hd *hd) {
 	unsigned char pkt[12];
 	unsigned char buf[18];
 	int rc;
@@ -147,11 +154,11 @@ static int atapi_request_sense(hd_t *hd) {
 	return 0;
 }
 
-static int cd_read(block_dev_t *bdev, char *buffer,
+static int cd_read(struct block_dev *bdev, char *buffer,
 					size_t count, blkno_t blkno) {
 	unsigned char pkt[12];
 	unsigned int blks;
-	hd_t *hd = (hd_t *) bdev->privdata;
+	struct hd *hd = block_dev_priv(bdev);
 
 	blks = count / CDSECTORSIZE;
 	if (blks > 0xFFFF) {
@@ -167,16 +174,17 @@ static int cd_read(block_dev_t *bdev, char *buffer,
 	pkt[7] = (blks >> 8) & 0xFF;
 	pkt[8] = blks & 0xFF;
 
-	return atapi_packet_read(hd, pkt, 12, buffer, count);
+	atapi_packet_read(hd, pkt, 12, buffer, count);
+	return count;
 }
 
-static int cd_write(block_dev_t *bdev, char *buffer,
+static int cd_write(struct block_dev *bdev, char *buffer,
 					size_t count, blkno_t blkno) {
 	return -ENODEV;
 }
 
-static int cd_ioctl(block_dev_t *bdev, int cmd, void *args, size_t size) {
-	hd_t *hd = (hd_t *) bdev->privdata;
+static int cd_ioctl(struct block_dev *bdev, int cmd, void *args, size_t size) {
+	struct hd *hd = block_dev_priv(bdev);
 	int rc;
 
 	switch (cmd) {
@@ -203,55 +211,41 @@ static int cd_ioctl(block_dev_t *bdev, int cmd, void *args, size_t size) {
 	return -ENOSYS;
 }
 
-static block_dev_driver_t idecd_pio_driver = {
-	"idecd_drv",
-	cd_ioctl,
-	cd_read,
-	cd_write
-};
-
-static int idecd_init (void *args) {
-//	struct ide_tab *ide;
-	hd_t *drive;
+static int idecd_init (struct block_dev *bdev, void *args) {
+	struct hd *drive;
 	size_t size;
-//	int i;
 	char   path[PATH_MAX];
-#if 0
-	ide = ide_get_drive();
+	drive = (struct hd *)args;
+	/* Make new device */
+	if (drive && drive->media == IDE_CDROM) {
+		*path = 0;
+		strcat(path, "/dev/cd#");
+		if (0 > (drive->idx = block_dev_named(path, &idecd_idx))) {
+			return drive->idx;
+		}
+		drive->bdev = block_dev_create(path, &idecd_pio_driver, drive);
 
-	for(i = 0; i < HD_DRIVES; i++) {
-		if (NULL == ide->drive[i]) {
-			continue;
+		if (NULL != drive->bdev) {
+			if (drive->blks <= 0) {
+				drive->blks = atapi_read_capacity(drive);
+			}
+			size = drive->blks * CDSECTORSIZE;
+			block_dev(drive->bdev)->size = size;
+			block_dev(drive->bdev)->block_size = CDSECTORSIZE;
+		} else {
+			return -1;
 		}
 
-		drive = (hd_t *) ide->drive[i];
-#endif
-		drive = (hd_t *)args;
-		/* Make new device */
-		if (drive->media == IDE_CDROM) {
-			*path = 0;
-			strcat(path, "/dev/cd#");
-			if (0 > (drive->idx = block_dev_named(path, &idecd_idx))) {
-				return drive->idx;
-			}
-			drive->bdev = block_dev_create(path, &idecd_pio_driver, drive);
-
-			if (NULL != drive->bdev) {
-				if (drive->blks <= 0) {
-					drive->blks = atapi_read_capacity(drive);
-				}
-				size = drive->blks * CDSECTORSIZE;
-				block_dev(drive->bdev)->size = size;
-			} else {
-				return -1;
-			}
-
-			drive->blks = 0;
-		}
-#if 0
+		drive->blks = 0;
 	}
-#endif
 	return 0;
 }
 
-EMBOX_BLOCK_DEV("idecd", &idecd_pio_driver, idecd_init);
+static const struct block_dev_ops idecd_pio_driver = {
+	.bdo_ioctl = cd_ioctl,
+	.bdo_read = cd_read,
+	.bdo_write = cd_write,
+	.bdo_probe = idecd_init,
+};
+
+BLOCK_DEV_DRIVER_DEF("idecd", &idecd_pio_driver);

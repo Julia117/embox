@@ -8,15 +8,17 @@
  * @author Anton Kozlov
  */
 
+#include <util/log.h>
+
 #include <stdint.h>
 #include <assert.h>
 #include <string.h>
 #include <limits.h>
 #include <util/binalign.h>
-#include <util/bitmap.h>
+#include <lib/libds/bitmap.h>
+#include <util/math.h>
 
 #include <mem/page.h>
-#include <embox/unit.h>
 
 //TODO page : have no synchronization
 
@@ -39,15 +41,17 @@ static unsigned int search_first_free(struct page_allocator *allocator,
 
 static unsigned int check_n_free(struct page_allocator *allocator,
 		unsigned int start_page, unsigned int page_q) {
-
-	return bitmap_find_bit(allocator->bitmap, page_q + start_page, start_page) \
-		- start_page;
+	assert(allocator);
+	const int nbits = min(start_page + page_q, allocator->pages_n);
+	return bitmap_find_bit(allocator->bitmap, nbits, start_page) - start_page;
 }
 
 static void mark_n_busy(struct page_allocator *allocator,
 		unsigned int start_page, unsigned int page_q) {
 	unsigned int page_i;
 
+	assert(allocator);
+	assert(start_page + page_q <= allocator->pages_n);
 	for (page_i = start_page; page_i < start_page + page_q; page_i++) {
 		bitmap_set_bit(allocator->bitmap, page_i);
 	}
@@ -58,12 +62,18 @@ static void mark_n_busy(struct page_allocator *allocator,
 static void mark_n_free(struct page_allocator *allocator,
 		unsigned int start_page, unsigned int page_q) {
 	unsigned int page_i;
+	int count_free = 0;
 
+	assert(allocator);
+	assert(start_page + page_q <= allocator->pages_n);
 	for (page_i = start_page; page_i < start_page + page_q; page_i++) {
-		bitmap_clear_bit(allocator->bitmap, page_i);
+		if (bitmap_test_bit(allocator->bitmap, page_i)) {
+			bitmap_clear_bit(allocator->bitmap, page_i);
+			++count_free;
+		}
 	}
 
-	allocator->free += page_q * allocator->page_size;
+	allocator->free += count_free * allocator->page_size;
 }
 
 static void *search_multi_page(struct page_allocator *allocator, size_t page_q) {
@@ -107,7 +117,7 @@ struct page_allocator *page_allocator_init(char *start, size_t len, size_t page_
 	unsigned int pages;
 	size_t bitmap_len;
 
-	if (len < page_size) {
+	if (len < page_size + sizeof(struct page_allocator)) {
 		return NULL;
 	}
 
@@ -119,17 +129,24 @@ struct page_allocator *page_allocator_init(char *start, size_t len, size_t page_
 
 	while (sizeof(struct page_allocator) + bitmap_len > pages_start - start) {
 		pages_start += page_size;
-		pages --;
-		assert(pages > 0);
+		pages--;
+		if (pages <= 0) {
+			return NULL;
+		}
 	}
 
+
 	allocator = (struct page_allocator *) start;
+	log_debug("allocator(%p)", allocator);
+
 	allocator->pages_start = pages_start;
 	allocator->pages_n = pages;
 	allocator->page_size = page_size;
 	allocator->free = pages * page_size;
 	allocator->bitmap_len = bitmap_len;
 	allocator->bitmap = (unsigned long *)((uintptr_t)&allocator->bitmap + sizeof(allocator->bitmap));
+
+	log_debug("allocator->bitmap(%p) bitmap_len(%=%zu)", allocator->bitmap, bitmap_len);
 
 	memset(allocator->bitmap, 0, bitmap_len);
 	bitmap_set_bit(allocator->bitmap, pages);

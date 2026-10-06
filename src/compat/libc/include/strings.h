@@ -6,31 +6,13 @@
  * @author Ilia Vaprol
  */
 
-#ifndef STRINGS_H_
-#define STRINGS_H_
+#ifndef COMPAT_LIBC_STRINGS_H_
+#define COMPAT_LIBC_STRINGS_H_
 
-
-#include <defines/size_t.h>
-
+#include <stddef.h>
 #include <sys/cdefs.h>
-__BEGIN_DECLS
 
-#if 0
-/* POSIX.1-2008 removes the specification of bcmp()
- * memcmp() is preferred over this function.*/
-int    bcmp(const void *, const void *, size_t);
-/*
- * For portability to implementations conforming to earlier versions of this
- * specification, memmove() is preferred over this function.
- */
-void   bcopy(const void *, void *, size_t);
-/* memset() is preferred over this function. */
-void   bzero(void *, size_t);
-/* strchr() is preferred over this function. */
-char   *index(const char *, int);
-/* strrchr() is preferred over this function. */
-char   *rindex(const char *, int);
-#endif
+__BEGIN_DECLS
 
 /**
  * The  ffs()  function  returns  the position of the first (least significant)
@@ -65,6 +47,19 @@ extern int strcasecmp(const char *s1, const char *s2);
  */
 extern int strncasecmp(const char *s1, const char *s2, size_t n);
 
+/**
+ * The bcopy() function copies n bytes from src to dest.  The result is correct,
+ *  even when both areas overlap.
+ */
+extern void bcopy(const void *src, void *dest, size_t n);
+
+/**
+ * The bzero() function erases the data in the n bytes of the memory starting
+ * at the location pointed to by s, by writing zeros (bytes containing '\0') to
+ *  that area.
+ */
+extern void bzero(void *s, size_t n);
+
 __END_DECLS
 
-#endif /* STRINGS_H_ */
+#endif /* COMPAT_LIBC_STRINGS_H_ */

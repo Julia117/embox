@@ -1,10 +1,19 @@
-
 package embox.driver
 
-module at91_twi {
-	source "at91_twi.c"
-}
+module i2c_core {
+	option string log_level="LOG_NONE"
 
-module i2c {
-	source "i2c.c"
+	option number i2c_bus_max=4
+
+	@IncludeExport(path="drivers/i2c")
+	source "i2c.h"
+	@IncludeExport(path="drivers/i2c")
+	source "i2c_bus.h"
+	@IncludeExport(path="drivers/i2c")
+	source "i2c_dev.h"
+
+	@IncludeExport(path="drivers/i2c")
+	source "i2c_priv.h"
+
+	source "i2c_bus.c"
 }
